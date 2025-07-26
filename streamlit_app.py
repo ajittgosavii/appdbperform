@@ -440,10 +440,10 @@ def main():
     user_manager = CloudUserManager()
     ai_analyzer = CloudAIAnalyzer(config)
     
-    # Session state initialization
+    # Session state initialization - Clear any old emoji-based navigation
     if 'authenticated_user' not in st.session_state:
         st.session_state.authenticated_user = None
-    if 'current_page' not in st.session_state:
+    if 'current_page' not in st.session_state or st.session_state.current_page.startswith("🎮"):
         st.session_state.current_page = "Interactive Demo"
     
     # Authentication
@@ -594,6 +594,26 @@ def show_user_header():
 def show_cloud_navigation(user_data, app_data, ai_analyzer):
     """Streamlit Cloud optimized navigation"""
     
+    # Clean up any old emoji-based navigation state
+    if 'current_page' in st.session_state:
+        old_page = st.session_state.current_page
+        # Map old emoji navigation to new clean navigation
+        navigation_mapping = {
+            "🎮 Interactive Demo": "Interactive Demo",
+            "🏠 Executive Dashboard": "Executive Dashboard",
+            "👥 User Analytics": "User Analytics",
+            "⚡ Performance Intelligence": "Performance Intelligence",
+            "🤖 Claude AI Insights": "AI Insights",
+            "🤖 AI Insights": "AI Insights",
+            "🚨 Alert Center": "Alert Center",
+            "📊 Reports & Export": "Reports & Export",
+            "📋 Reports & Export": "Reports & Export",
+            "⚙️ Cloud Configuration": "Configuration",
+            "⚙️ Configuration": "Configuration"
+        }
+        if old_page in navigation_mapping:
+            st.session_state.current_page = navigation_mapping[old_page]
+    
     # Sidebar navigation
     st.sidebar.title("Navigation")
     
@@ -645,26 +665,29 @@ def show_cloud_navigation(user_data, app_data, ai_analyzer):
     """)
     
     # Route to appropriate page
-    if selected_nav == "Interactive Demo":
+    # Handle legacy emoji navigation
+    if selected_nav.startswith("🎮") or "Interactive Demo" in selected_nav:
         show_streamlit_cloud_demo()
-    elif selected_nav == "Executive Dashboard":
+    elif selected_nav.startswith("🏠") or "Executive Dashboard" in selected_nav:
         show_cloud_executive_dashboard(user_data, app_data, ai_analyzer)
-    elif selected_nav == "User Analytics":
+    elif selected_nav.startswith("👥") or "User Analytics" in selected_nav:
         show_cloud_user_analytics(user_data, ai_analyzer)
-    elif selected_nav == "Performance Intelligence":
+    elif selected_nav.startswith("⚡") or "Performance Intelligence" in selected_nav:
         show_cloud_performance_intelligence(user_data, app_data, ai_analyzer)
-    elif selected_nav == "AI Insights":
+    elif selected_nav.startswith("🤖") or "AI Insights" in selected_nav:
         show_cloud_ai_insights(user_data, app_data, ai_analyzer)
-    elif selected_nav == "Alert Center":
+    elif selected_nav.startswith("🚨") or "Alert Center" in selected_nav:
         show_cloud_alert_center(user_data, app_data)
-    elif selected_nav == "Reports & Export":
+    elif "Reports" in selected_nav and "Export" in selected_nav:
         show_cloud_reports(user_data, app_data)
-    elif selected_nav == "Configuration":
+    elif "Configuration" in selected_nav:
         show_cloud_configuration()
     else:
         # Debug fallback
         st.error(f"Navigation page '{selected_nav}' not found. Please check routing.")
         st.info("Available pages: Interactive Demo, Executive Dashboard, User Analytics, Performance Intelligence, AI Insights, Alert Center, Reports & Export, Configuration")
+        # Default to Interactive Demo
+        show_streamlit_cloud_demo()
 
 def show_streamlit_cloud_demo():
     """Comprehensive demo section optimized for Streamlit Cloud"""
