@@ -444,7 +444,7 @@ def main():
     if 'authenticated_user' not in st.session_state:
         st.session_state.authenticated_user = None
     if 'current_page' not in st.session_state:
-        st.session_state.current_page = "🎮 Interactive Demo"
+        st.session_state.current_page = "Interactive Demo"
     
     # Authentication
     if st.session_state.authenticated_user is None:
@@ -583,11 +583,11 @@ def show_user_header():
         """)
     
     with col2:
-        if st.button("⚙️ Settings"):
+        if st.button("Settings"):
             st.session_state.show_settings = True
     
     with col3:
-        if st.button("🚪 Logout"):
+        if st.button("Logout"):
             st.session_state.authenticated_user = None
             st.rerun()
 
@@ -645,22 +645,26 @@ def show_cloud_navigation(user_data, app_data, ai_analyzer):
     """)
     
     # Route to appropriate page
-    if selected_nav == "📊 Interactive Demo":
+    if selected_nav == "Interactive Demo":
         show_streamlit_cloud_demo()
-    elif selected_nav == "🏠 Executive Dashboard":
+    elif selected_nav == "Executive Dashboard":
         show_cloud_executive_dashboard(user_data, app_data, ai_analyzer)
-    elif selected_nav == "👥 User Analytics":
+    elif selected_nav == "User Analytics":
         show_cloud_user_analytics(user_data, ai_analyzer)
-    elif selected_nav == "⚡ Performance Intelligence":
+    elif selected_nav == "Performance Intelligence":
         show_cloud_performance_intelligence(user_data, app_data, ai_analyzer)
-    elif selected_nav == "🤖 AI Insights":
+    elif selected_nav == "AI Insights":
         show_cloud_ai_insights(user_data, app_data, ai_analyzer)
-    elif selected_nav == "🚨 Alert Center":
+    elif selected_nav == "Alert Center":
         show_cloud_alert_center(user_data, app_data)
-    elif selected_nav == "📋 Reports & Export":
+    elif selected_nav == "Reports & Export":
         show_cloud_reports(user_data, app_data)
-    elif selected_nav == "⚙️ Configuration":
+    elif selected_nav == "Configuration":
         show_cloud_configuration()
+    else:
+        # Debug fallback
+        st.error(f"Navigation page '{selected_nav}' not found. Please check routing.")
+        st.info("Available pages: Interactive Demo, Executive Dashboard, User Analytics, Performance Intelligence, AI Insights, Alert Center, Reports & Export, Configuration")
 
 def show_streamlit_cloud_demo():
     """Comprehensive demo section optimized for Streamlit Cloud"""
