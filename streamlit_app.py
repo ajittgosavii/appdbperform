@@ -421,7 +421,7 @@ def generate_cloud_optimized_data():
             'application': app,
             'response_time_ms': random.gauss(1200, 400),
             'db_query_time_ms': random.gauss(300, 100),
-            'error_count': random.poisson(1),
+            'error_count': np.random.poisson(1),  # Fixed: Use np.random.poisson instead of random.poisson
             'concurrent_users': random.randint(5, applications[app]['users']),
             'throughput_rps': random.uniform(10, 100),
             'memory_usage_mb': random.uniform(100, 1000),
@@ -918,7 +918,7 @@ password = "your-email-password"
         
         deployment_steps = [
             ("Repository Connected", "✅", "GitHub repository linked successfully"),
-            ("Dependencies Installed", "✅", f"All {len(open('requirements.txt').readlines()) if 'requirements.txt' in locals() else 'required'} packages installed"),
+            ("Dependencies Installed", "✅", "All required packages installed"),
             ("App Running", "✅", "Application is live and accessible"),
             ("Secrets Configured", "⚠️", "Some secrets using demo values")
         ]
