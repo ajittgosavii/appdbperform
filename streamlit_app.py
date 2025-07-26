@@ -110,8 +110,8 @@ class StreamlitCloudConfig:
 
 # Page configuration
 st.set_page_config(
-    page_title="Enterprise DB-App Performance Analyzer",
-    page_icon="🤖",
+    page_title="Enterprise DB Performance Analyzer",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -127,17 +127,16 @@ config = get_config()
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.8rem;
-        font-weight: bold;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        font-size: 2.5rem;
+        font-weight: 600;
+        color: #2c3e50;
         text-align: center;
         margin-bottom: 2rem;
         padding: 1.5rem;
-        border-radius: 15px;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        background: #ffffff;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
     
     .metric-card {
@@ -180,21 +179,23 @@ st.markdown("""
     }
     
     .ai-insight {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: #f8f9fa;
+        color: #495057;
         padding: 1.5rem;
-        border-radius: 15px;
+        border-radius: 8px;
         margin: 1rem 0;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        border-left: 4px solid #007bff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .demo-section {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        color: white;
+        background: #f8f9fa;
+        color: #333;
         padding: 2rem;
-        border-radius: 20px;
+        border-radius: 10px;
         margin: 1rem 0;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .config-section {
@@ -217,12 +218,13 @@ st.markdown("""
     .status-yellow { background-color: #ffc107; }
     .status-red { background-color: #dc3545; }
     
-    .streamlit-cloud-info {
-        background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+    .deployment-info {
+        background: #f8f9fa;
         padding: 1rem;
-        border-radius: 10px;
+        border-radius: 8px;
         margin: 1rem 0;
-        border-left: 4px solid #17a2b8;
+        border: 1px solid #dee2e6;
+        color: #495057;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -452,8 +454,8 @@ def main():
     # Main application header
     st.markdown('''
     <div class="main-header">
-        🤖 Enterprise DB-App Performance Analyzer
-        <br><small>Powered by Claude AI • Streamlit Cloud Edition</small>
+        Enterprise DB-App Performance Analyzer
+        <br><small>Powered by Claude AI</small>
     </div>
     ''', unsafe_allow_html=True)
     
@@ -471,17 +473,14 @@ def show_cloud_deployment_info():
     """Show Streamlit Cloud specific deployment information"""
     if config.app_config["environment"] == "demo":
         st.markdown('''
-        <div class="streamlit-cloud-info">
-            <h4>🌟 Streamlit Cloud Demo Environment</h4>
-            <p><strong>Status:</strong> <span class="status-indicator status-green"></span>Active</p>
-            <p><strong>Mode:</strong> Demo Mode with Simulated Data</p>
-            <p><strong>AI Features:</strong> Simulated Claude AI Responses (Configure real API key in secrets)</p>
+        <div class="deployment-info">
+            <p><strong>Environment:</strong> Demo Mode | <strong>Status:</strong> <span class="status-indicator status-green"></span>Active | <strong>Data:</strong> Simulated</p>
         </div>
         ''', unsafe_allow_html=True)
 
 def show_cloud_login_page(user_manager):
     """Streamlit Cloud optimized login page"""
-    st.markdown('<div class="main-header">🔐 Enterprise Login</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Enterprise Login</div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -497,7 +496,7 @@ def show_cloud_login_page(user_manager):
                 "admin@demo.com", "dba@demo.com", "dev@demo.com", "manager@demo.com"
             ])
             
-            if st.button("🚀 Login to Demo", use_container_width=True):
+            if st.button("Login to Demo", use_container_width=True):
                 user_info = user_manager.authenticate(email)
                 st.session_state.authenticated_user = user_info
                 st.success(f"Welcome {user_info['name']}!")
@@ -596,7 +595,7 @@ def show_cloud_navigation(user_data, app_data, ai_analyzer):
     """Streamlit Cloud optimized navigation"""
     
     # Sidebar navigation
-    st.sidebar.title("🏢 Navigation")
+    st.sidebar.title("Navigation")
     
     # User role-based navigation
     user_role = st.session_state.authenticated_user['role']
@@ -638,7 +637,7 @@ def show_cloud_navigation(user_data, app_data, ai_analyzer):
     
     # Show environment info in sidebar
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🌍 Environment")
+    st.sidebar.markdown("### Environment")
     st.sidebar.info(f"""
     **Environment:** {config.app_config['environment'].title()}
     **Version:** {config.app_config['app_version']}
@@ -646,7 +645,7 @@ def show_cloud_navigation(user_data, app_data, ai_analyzer):
     """)
     
     # Route to appropriate page
-    if selected_nav == "🎮 Interactive Demo":
+    if selected_nav == "📊 Interactive Demo":
         show_streamlit_cloud_demo()
     elif selected_nav == "🏠 Executive Dashboard":
         show_cloud_executive_dashboard(user_data, app_data, ai_analyzer)
@@ -654,20 +653,20 @@ def show_cloud_navigation(user_data, app_data, ai_analyzer):
         show_cloud_user_analytics(user_data, ai_analyzer)
     elif selected_nav == "⚡ Performance Intelligence":
         show_cloud_performance_intelligence(user_data, app_data, ai_analyzer)
-    elif selected_nav == "🤖 Claude AI Insights":
+    elif selected_nav == "🤖 AI Insights":
         show_cloud_ai_insights(user_data, app_data, ai_analyzer)
     elif selected_nav == "🚨 Alert Center":
         show_cloud_alert_center(user_data, app_data)
-    elif selected_nav == "📊 Reports & Export":
+    elif selected_nav == "📋 Reports & Export":
         show_cloud_reports(user_data, app_data)
-    elif selected_nav == "⚙️ Cloud Configuration":
+    elif selected_nav == "⚙️ Configuration":
         show_cloud_configuration()
 
 def show_streamlit_cloud_demo():
     """Comprehensive demo section optimized for Streamlit Cloud"""
     st.markdown('<div class="demo-section">', unsafe_allow_html=True)
-    st.markdown("# 🎮 Interactive Demo Center")
-    st.markdown("**Learn how to use the Enterprise DB-App Performance Analyzer on Streamlit Cloud**")
+    st.markdown("# Interactive Demo Center")
+    st.markdown("**Learn how to use the Enterprise DB-App Performance Analyzer**")
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Demo tabs
@@ -755,7 +754,6 @@ def show_quick_start_demo():
             progress_bar.progress((i + 1) / len(tour_steps))
             time.sleep(1)
         
-        st.balloons()
         st.success("🎉 Welcome to your performance command center! Use the sidebar to explore different features.")
 
 def show_dashboard_tour():
@@ -1173,7 +1171,7 @@ def show_cloud_performance_intelligence(user_data, app_data, ai_analyzer):
 
 def show_cloud_ai_insights(user_data, app_data, ai_analyzer):
     """Cloud-optimized AI insights"""
-    st.header("🤖 Claude AI Intelligence Center")
+    st.header("🤖 AI Intelligence Center")
     
     # AI analysis options
     col1, col2 = st.columns(2)
@@ -1358,7 +1356,7 @@ def show_cloud_reports(user_data, app_data):
 
 def show_cloud_configuration():
     """Cloud-specific configuration interface"""
-    st.header("⚙️ Cloud Configuration")
+    st.header("⚙️ System Configuration")
     
     config_tabs = st.tabs(["🔧 App Settings", "🔐 Security", "📧 Notifications", "🚀 Features"])
     
