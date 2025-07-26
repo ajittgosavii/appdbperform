@@ -1165,8 +1165,7 @@ def show_cloud_performance_intelligence(user_data, app_data, ai_analyzer):
         })
         
         fig = px.scatter(correlation_data, x='DB_Time', y='App_Time', 
-                        title="Database vs Application Response Time Correlation",
-                        trendline="ols")
+                        title="Database vs Application Response Time Correlation")
         st.plotly_chart(fig, use_container_width=True)
         
         correlation = correlation_data.corr().iloc[0, 1]
