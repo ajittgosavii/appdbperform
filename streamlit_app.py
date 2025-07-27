@@ -189,7 +189,7 @@ class CloudCompatibleSQLServerInterface:
             logger.warning(f"SQLAlchemy connection failed: {e}")
             return False
     
-    def execute_query(self, query: str, params: list = None) -> pd.DataFrame:
+    def execute_query(self, query: str, params: list = None):
         """Execute query using available connection method - FIXED PARAMETER HANDLING"""
         try:
             if not self._is_safe_query(query):
@@ -209,7 +209,7 @@ class CloudCompatibleSQLServerInterface:
             # Return demo data on failure to prevent crashes
             return self._generate_demo_data()
     
-    def _execute_pymssql_query(self, query: str, params: list = None) -> pd.DataFrame:
+    def _execute_pymssql_query(self, query: str, params: list = None):
         """Execute query using pymssql - FIXED PARAMETER SUBSTITUTION"""
         try:
             conn = pymssql.connect(
@@ -239,7 +239,7 @@ class CloudCompatibleSQLServerInterface:
             # Return empty DataFrame with expected columns
             return self._get_empty_performance_dataframe()
     
-    def _execute_sqlalchemy_query(self, query: str, params: list = None) -> pd.DataFrame:
+    def _execute_sqlalchemy_query(self, query: str, params: list = None):
         """Execute query using SQLAlchemy - FIXED PARAMETER HANDLING"""
         try:
             with self.engine.connect() as conn:
@@ -264,7 +264,7 @@ class CloudCompatibleSQLServerInterface:
             # Return empty DataFrame with expected columns
             return self._get_empty_performance_dataframe()
     
-    def _get_empty_performance_dataframe(self) -> pd.DataFrame:
+    def _get_empty_performance_dataframe(self):
         """Return empty DataFrame with expected performance columns"""
         return pd.DataFrame(columns=[
             'timestamp', 'application', 'query_id', 'execution_time_ms',
@@ -273,7 +273,7 @@ class CloudCompatibleSQLServerInterface:
             'connection_id', 'user_name', 'wait_event'
         ])
     
-    def get_performance_metrics(self, hours: int = 24) -> pd.DataFrame:
+    def get_performance_metrics(self, hours: int = 24):
         """Get SQL Server performance metrics - FIXED VERSION"""
         if not self.connected:
             logger.info("Database not connected - returning demo data")
@@ -428,7 +428,7 @@ class CloudCompatibleSQLServerInterface:
         return stats
 
 # FIXED: show_secure_database_performance function with proper error handling
-def show_secure_database_performance(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+def show_secure_database_performance(data, analytics_engine):
     """Secure SQL Server performance analysis - FIXED VERSION"""
     st.header("🔒 SQL Server Performance Analysis")
     st.markdown("**Secure SQL Server performance monitoring with Remote AI insights**")
@@ -529,7 +529,7 @@ def show_secure_database_performance(data: pd.DataFrame, analytics_engine: Secur
         st.error("Unable to perform slow query analysis")
 
 # FIXED: Enhanced demo data generation with guaranteed columns
-def _generate_demo_data(self) -> pd.DataFrame:
+def _generate_demo_data(self):
     """Generate realistic demo data for development/demo - GUARANTEED COLUMNS"""
     logger.info("Generating cloud-compatible demo data with all required columns")
     
@@ -890,7 +890,7 @@ class SecureSQLServerInterface:
             if conn:
                 conn.close()
     
-    def execute_query(self, query: str, params: List = None) -> pd.DataFrame:
+    def execute_query(self, query: str, params: List = None):
         """Execute read-only query securely on SQL Server"""
         try:
             # Security: Validate query is read-only
@@ -908,7 +908,7 @@ class SecureSQLServerInterface:
             logger.error(f"Query execution failed: {e}")
             return pd.DataFrame()
     
-    def get_performance_metrics(self, hours: int = 24) -> pd.DataFrame:
+    def get_performance_metrics(self, hours: int = 24):
         """Get SQL Server performance metrics with improved query"""
         if not self.connected:
             logger.info("Using demo performance metrics - not connected to SQL Server")
@@ -949,7 +949,7 @@ class SecureSQLServerInterface:
                 ELSE ''
             END as wait_event
         FROM sys.dm_exec_query_stats qs
-        WHERE qs.creation_time > DATEADD(HOUR, -?, GETDATE())
+        WHERE qs.creation_time > DATEADD(HOUR, -{hours}, GETDATE())
             AND qs.total_elapsed_time > 0
         ORDER BY qs.total_elapsed_time DESC
         """
@@ -963,7 +963,7 @@ class SecureSQLServerInterface:
             logger.info("Falling back to demo data")
             return self._generate_demo_data()
     
-    def get_slow_queries(self, threshold_ms: int = 5000, limit: int = 100) -> pd.DataFrame:
+    def get_slow_queries(self, threshold_ms: int = 5000, limit: int = 100):
         """Get slow queries from SQL Server with security-compliant query"""
         if not self.connected:
             logger.info("Using demo slow queries data")
@@ -1107,7 +1107,7 @@ class SecureSQLServerInterface:
         
         return True
     
-    def _generate_demo_data(self) -> pd.DataFrame:
+    def _generate_demo_data(self):
         """Generate realistic demo data when database is unavailable"""
         logger.info("Generating secure demo performance data for SQL Server")
         
@@ -1155,7 +1155,7 @@ class SecureSQLServerInterface:
         
         return pd.DataFrame(data)
     
-    def _generate_slow_queries_demo(self, limit: int) -> pd.DataFrame:
+    def _generate_slow_queries_demo(self, limit: int):
         """Generate demo slow queries data for SQL Server"""
         slow_queries = []
         for i in range(min(limit, 50)):
@@ -2352,7 +2352,7 @@ def show_secure_user_header(user_manager: SecureEnterpriseUserManager):
             st.success("🔒 Logged out securely")
             st.rerun()
 
-def load_secure_performance_data(db_interface: CloudCompatibleSQLServerInterface) -> pd.DataFrame:
+def load_secure_performance_data(db_interface: CloudCompatibleSQLServerInterface):
     """Load performance data securely from SQL Server or generate demo data"""
     try:
         if db_interface.connected:
@@ -2569,7 +2569,7 @@ def route_to_secure_page(page: str, config: EnterpriseSecurityConfig, data: pd.D
     else:
         show_secure_executive_dashboard(config, data, analytics_engine)
 
-def show_secure_executive_dashboard(config: EnterpriseSecurityConfig, data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+def show_secure_executive_dashboard(config, data, analytics_engine):
     """Secure executive performance dashboard"""
     st.header("🔒 Executive Performance Dashboard")
     st.markdown("**Secure real-time enterprise SQL Server performance overview with Remote AI insights**")
@@ -2639,7 +2639,7 @@ def show_secure_executive_dashboard(config: EnterpriseSecurityConfig, data: pd.D
                                unsafe_allow_html=True)
                 st.session_state.generate_analytics = False
 
-def show_secure_database_performance(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+def show_secure_database_performance(data, analytics_engine):
     """Secure SQL Server performance analysis"""
     st.header("🔒 SQL Server Performance Analysis")
     st.markdown("**Secure SQL Server performance monitoring with Remote AI insights**")
@@ -2870,7 +2870,7 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
     compliance_df = pd.DataFrame(compliance_items)
     st.dataframe(compliance_df, use_container_width=True)
 
-def show_secure_application_performance(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+def show_secure_application_performance(data, analytics_engine):
     """Secure application-specific performance analysis for SQL Server"""
     st.header("🔒 Application Performance Analysis")
     st.markdown("**Secure SQL Server application monitoring and optimization with Remote AI insights**")
@@ -2934,7 +2934,7 @@ def show_secure_application_performance(data: pd.DataFrame, analytics_engine: Se
                 st.markdown(f'<div class="analytics-insight">{analysis["optimization_recommendations"]}</div>', 
                            unsafe_allow_html=True)
 
-def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+def show_secure_advanced_analytics(data, analytics_engine):
     """Advanced analytics interface with Remote AI enhancement options"""
     st.header("🤖 Advanced SQL Server Analytics with Remote AI")
     
@@ -3327,7 +3327,7 @@ def show_secure_reports_export(data: pd.DataFrame):
                 mime="text/csv"
             )
 
-def generate_secure_performance_report(data: pd.DataFrame, report_type: str) -> pd.DataFrame:
+def generate_secure_performance_report(data: pd.DataFrame, report_type: str):
     """Generate secure performance report based on type for SQL Server"""
     if report_type == "Executive Summary":
         return data.groupby('application').agg({
