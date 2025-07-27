@@ -428,45 +428,72 @@ class CloudCompatibleSQLServerInterface:
         """Generate realistic demo data for development/demo"""
         logger.info("Generating cloud-compatible demo data")
         
-        base_time = datetime.now() - timedelta(hours=24)
-        
-        applications = [
-            {"name": "web_api", "base_time": 150, "variance": 50, "volume": 0.5},
-            {"name": "mobile_api", "base_time": 200, "variance": 80, "volume": 0.25},
-            {"name": "batch_processor", "base_time": 2000, "variance": 500, "volume": 0.15},
-            {"name": "analytics_engine", "base_time": 5000, "variance": 2000, "volume": 0.1}
-        ]
-        
-        data = []
-        for i in range(2500):
-            app = np.random.choice(applications, p=[a["volume"] for a in applications])
-            timestamp = base_time + timedelta(seconds=np.random.randint(0, 86400))
+        try:
+            base_time = datetime.now() - timedelta(hours=24)
             
-            hour = timestamp.hour
-            business_hours_multiplier = 1.5 if 9 <= hour <= 17 else 0.7
+            # FIXED: Applications list with proper structure for np.random.choice
+            applications = [
+                {"name": "web_api", "base_time": 150, "variance": 50, "volume": 0.5},
+                {"name": "mobile_api", "base_time": 200, "variance": 80, "volume": 0.25},
+                {"name": "batch_processor", "base_time": 2000, "variance": 500, "volume": 0.15},
+                {"name": "analytics_engine", "base_time": 5000, "variance": 2000, "volume": 0.1}
+            ]
             
-            exec_time = max(10, np.random.normal(
-                app["base_time"] * business_hours_multiplier, 
-                app["variance"]
-            ))
+            data = []
+            for i in range(2500):
+                # FIXED: Select index first, then get app config
+                app_index = np.random.choice(len(applications), p=[a["volume"] for a in applications])
+                app_config = applications[app_index]
+                app_name = app_config["name"]
+                
+                timestamp = base_time + timedelta(seconds=np.random.randint(0, 86400))
+                
+                hour = timestamp.hour
+                business_hours_multiplier = 1.5 if 9 <= hour <= 17 else 0.7
+                
+                exec_time = max(10, np.random.normal(
+                    app_config["base_time"] * business_hours_multiplier, 
+                    app_config["variance"]
+                ))
+                
+                data.append({
+                    "timestamp": timestamp,
+                    "application": app_name,
+                    "query_id": f"q_{i % 150}",
+                    "execution_time_ms": exec_time,
+                    "cpu_usage_percent": min(100, max(0, exec_time / 40 + np.random.normal(0, 15))),
+                    "memory_usage_mb": max(10, np.random.normal(300, 150)),
+                    "rows_examined": max(1, int(np.random.exponential(2000))),
+                    "rows_returned": max(1, int(np.random.exponential(200))),
+                    "cache_hit_ratio": np.random.uniform(0.65, 0.98),
+                    "connection_id": np.random.randint(1, 100),
+                    "database_name": "production_db",
+                    "user_name": f"{app_name}_user",
+                    "wait_event": np.random.choice(["", "PAGEIOLATCH_SH", "LCK_M_S", "WRITELOG"], p=[0.7, 0.1, 0.15, 0.05])
+                })
             
-            data.append({
-                "timestamp": timestamp,
-                "application": app["name"],
-                "query_id": f"q_{i % 150}",
-                "execution_time_ms": exec_time,
-                "cpu_usage_percent": min(100, max(0, exec_time / 40 + np.random.normal(0, 15))),
-                "memory_usage_mb": max(10, np.random.normal(300, 150)),
-                "rows_examined": max(1, int(np.random.exponential(2000))),
-                "rows_returned": max(1, int(np.random.exponential(200))),
-                "cache_hit_ratio": np.random.uniform(0.65, 0.98),
-                "connection_id": np.random.randint(1, 100),
-                "database_name": "production_db",
-                "user_name": f"{app['name']}_user",
-                "wait_event": np.random.choice(["", "PAGEIOLATCH_SH", "LCK_M_S", "WRITELOG"], p=[0.7, 0.1, 0.15, 0.05])
+            df = pd.DataFrame(data)
+            logger.info(f"Generated demo data with {len(df)} records")
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error generating demo data: {e}")
+            # Return minimal DataFrame with required columns if generation fails
+            return pd.DataFrame({
+                "timestamp": [datetime.now()],
+                "application": ["demo_app"],
+                "query_id": ["demo_query"],
+                "execution_time_ms": [100.0],
+                "cpu_usage_percent": [50.0],
+                "memory_usage_mb": [200.0],
+                "rows_examined": [1000],
+                "rows_returned": [100],
+                "cache_hit_ratio": [0.9],
+                "connection_id": [1],
+                "database_name": ["demo_db"],
+                "user_name": ["demo_user"],
+                "wait_event": [""]
             })
-        
-        return pd.DataFrame(data)
 
 class EnterpriseSecurityConfig:
     """Secure enterprise configuration management with remote Ollama support"""
@@ -972,20 +999,23 @@ class SecureSQLServerInterface:
         
         data = []
         for i in range(2500):
-            app = np.random.choice(applications, p=[a["volume"] for a in applications])
+            app_index = np.random.choice(len(applications), p=[a["volume"] for a in applications])
+            app_config = applications[app_index]
+            app_name = app_config["name"]
+            
             timestamp = base_time + timedelta(seconds=np.random.randint(0, 86400))
             
             hour = timestamp.hour
             business_hours_multiplier = 1.5 if 9 <= hour <= 17 else 0.7
             
             exec_time = max(10, np.random.normal(
-                app["base_time"] * business_hours_multiplier, 
-                app["variance"]
+                app_config["base_time"] * business_hours_multiplier, 
+                app_config["variance"]
             ))
             
             data.append({
                 "timestamp": timestamp,
-                "application": app["name"],
+                "application": app_name,
                 "query_id": f"q_{i % 150}",
                 "execution_time_ms": exec_time,
                 "cpu_usage_percent": min(100, max(0, exec_time / 40 + np.random.normal(0, 15))),
@@ -995,7 +1025,7 @@ class SecureSQLServerInterface:
                 "cache_hit_ratio": np.random.uniform(0.65, 0.98),
                 "connection_id": np.random.randint(1, 100),
                 "database_name": "production_db",
-                "user_name": f"{app['name']}_user",
+                "user_name": f"{app_name}_user",
                 "wait_event": np.random.choice(["", "PAGEIOLATCH_SH", "LCK_M_S", "WRITELOG"], p=[0.7, 0.1, 0.15, 0.05])
             })
         
@@ -1696,6 +1726,7 @@ class SecureEnterpriseUserManager:
                 # Update user login time
                 user["last_login"] = datetime.now()
                 user["session_id"] = session_id
+                user["email"] = email  # Add email to user dict
                 
                 # Reset failed attempts
                 self.failed_attempts.pop(email, None)
@@ -2537,172 +2568,6 @@ def show_secure_database_performance(data: pd.DataFrame, analytics_engine: Secur
     else:
         st.success("✅ No slow queries detected in current time period")
 
-def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
-    """Advanced analytics interface with Remote AI enhancement options"""
-    st.header("🤖 Advanced SQL Server Analytics with Remote AI")
-    
-    # Show AI status
-    if hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "remote_ollama":
-        ai_status = f"🤖 **Remote AI Enhanced** - Using {analytics_engine.ai_type.replace('_', ' ').title()}"
-        if hasattr(analytics_engine, 'ollama_client') and analytics_engine.ollama_client:
-            connection_test = analytics_engine.ollama_client.test_connection()
-            connection_status = "🟢 Connected" if connection_test else "🔴 Disconnected"
-            st.success(f"{ai_status} ({connection_status})")
-        else:
-            st.warning(f"{ai_status} (Not Initialized)")
-    elif hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "transformers":
-        st.success("🤖 **Local AI Enhanced** - Using Transformers")
-    else:
-        st.info("📊 **Statistical Analytics** - Advanced mathematical analysis (Configure remote Ollama for AI enhancement)")
-    
-    st.markdown("**Comprehensive SQL Server statistical analysis with Remote AI enhancement**")
-    
-    # Analytics controls
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        analysis_type = st.selectbox("Analysis Type", [
-            "Performance Overview",
-            "Technical Analysis", 
-            "Optimization Recommendations",
-            "Risk Assessment"
-        ])
-    
-    with col2:
-        # Use the safe method to check remote AI enabled status
-        ai_enhancement = st.checkbox("Use Remote AI Enhancement", 
-                                   value=analytics_engine.has_remote_ai_enabled(),
-                                   disabled=not analytics_engine.has_remote_ai_enabled(),
-                                   help="Requires remote Ollama configuration")
-        
-        if st.button("🚀 Run Advanced Analysis", key="advanced_analytics"):
-            with st.spinner("🔒 Performing comprehensive SQL Server analysis with Remote AI..."):
-                # Temporarily modify AI setting if user unchecked it
-                original_ai_setting = analytics_engine.has_remote_ai_enabled()
-                if hasattr(analytics_engine, '_remote_ai_enabled') and not ai_enhancement:
-                    analytics_engine._remote_ai_enabled = False
-                
-                analysis = analytics_engine.analyze_performance_data(data)
-                
-                # Restore original setting
-                if hasattr(analytics_engine, '_remote_ai_enabled'):
-                    analytics_engine._remote_ai_enabled = original_ai_setting
-                
-                # Map analysis type to result key
-                analysis_map = {
-                    "Performance Overview": "executive_summary",
-                    "Technical Analysis": "technical_analysis",
-                    "Optimization Recommendations": "optimization_recommendations", 
-                    "Risk Assessment": "risk_assessment"
-                }
-                
-                result_key = analysis_map.get(analysis_type, "executive_summary")
-                
-                if result_key in analysis:
-                    st.markdown(f'<div class="analytics-insight">{analysis[result_key]}</div>', 
-                               unsafe_allow_html=True)
-                else:
-                    st.error("Analysis temporarily unavailable")
-    
-    # Performance insights
-    if not data.empty:
-        st.subheader("🔍 Automated SQL Server Performance Insights")
-        
-        # Generate automated insights
-        insights = generate_advanced_insights(data)
-        
-        for insight in insights:
-            if insight['type'] == 'critical':
-                st.markdown(f'<div class="alert-critical"><strong>🚨 {insight["title"]}</strong><br>{insight["message"]}</div>', 
-                           unsafe_allow_html=True)
-            elif insight['type'] == 'warning':
-                st.markdown(f'<div class="alert-warning"><strong>⚠️ {insight["title"]}</strong><br>{insight["message"]}</div>', 
-                           unsafe_allow_html=True)
-            elif insight['type'] == 'success':
-                st.markdown(f'<div class="alert-success"><strong>✅ {insight["title"]}</strong><br>{insight["message"]}</div>', 
-                           unsafe_allow_html=True)
-
-def generate_advanced_insights(data: pd.DataFrame) -> List[Dict]:
-    """Generate advanced statistical insights for SQL Server"""
-    insights = []
-    
-    # Statistical analysis
-    avg_time = data['execution_time_ms'].mean()
-    std_time = data['execution_time_ms'].std()
-    p95_time = data['execution_time_ms'].quantile(0.95)
-    
-    # Performance distribution analysis
-    slow_queries = (data['execution_time_ms'] > 5000).sum()
-    slow_rate = (slow_queries / len(data) * 100) if len(data) > 0 else 0
-    
-    # Variability analysis
-    coefficient_of_variation = (std_time / avg_time) if avg_time > 0 else 0
-    
-    if slow_rate > 10:
-        insights.append({
-            'type': 'critical',
-            'title': 'Critical SQL Server Performance Issue',
-            'message': f'{slow_rate:.1f}% of queries exceed 5 second threshold. Consider Query Store analysis and index optimization.'
-        })
-    elif slow_rate > 5:
-        insights.append({
-            'type': 'warning',
-            'title': 'SQL Server Performance Degradation',
-            'message': f'{slow_rate:.1f}% of queries are slow. Review execution plans and consider Database Engine Tuning Advisor.'
-        })
-    elif slow_rate < 1:
-        insights.append({
-            'type': 'success', 
-            'title': 'Excellent SQL Server Performance',
-            'message': f'Only {slow_rate:.1f}% of queries are slow. SQL Server is performing optimally.'
-        })
-    
-    # Performance consistency analysis
-    if coefficient_of_variation > 1.0:
-        insights.append({
-            'type': 'warning',
-            'title': 'High SQL Server Performance Variability',
-            'message': f'Response time variability is high (CV: {coefficient_of_variation:.2f}). Check for parameter sniffing and plan cache issues.'
-        })
-    elif coefficient_of_variation < 0.3:
-        insights.append({
-            'type': 'success',
-            'title': 'Consistent SQL Server Performance',
-            'message': f'Response times are very consistent (CV: {coefficient_of_variation:.2f}). Query plan stability is excellent.'
-        })
-    
-    # Resource utilization insights
-    avg_cpu = data['cpu_usage_percent'].mean()
-    if avg_cpu > 85:
-        insights.append({
-            'type': 'critical',
-            'title': 'Critical SQL Server CPU Usage',
-            'message': f'Average CPU usage is {avg_cpu:.1f}%. Consider scaling up or implementing Resource Governor.'
-        })
-    elif avg_cpu > 70:
-        insights.append({
-            'type': 'warning',
-            'title': 'High SQL Server CPU Usage',
-            'message': f'Average CPU usage is {avg_cpu:.1f}%. Monitor wait statistics and consider performance tuning.'
-        })
-    
-    # Cache performance insights
-    avg_cache = data['cache_hit_ratio'].mean()
-    if avg_cache < 0.7:
-        insights.append({
-            'type': 'warning',
-            'title': 'Poor SQL Server Buffer Cache Performance', 
-            'message': f'Buffer cache hit ratio is {avg_cache:.1f}%. Consider increasing max server memory or optimizing queries.'
-        })
-    elif avg_cache > 0.95:
-        insights.append({
-            'type': 'success',
-            'title': 'Excellent SQL Server Buffer Cache Performance',
-            'message': f'Buffer cache hit ratio is {avg_cache:.1f}%. Memory configuration is optimal.'
-        })
-    
-    return insights
-
 def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFrame):
     """Secure SQL Server system health monitoring"""
     st.header("🔒 SQL Server System Health Monitoring")
@@ -2944,6 +2809,172 @@ def show_secure_application_performance(data: pd.DataFrame, analytics_engine: Se
             if "optimization_recommendations" in analysis:
                 st.markdown(f'<div class="analytics-insight">{analysis["optimization_recommendations"]}</div>', 
                            unsafe_allow_html=True)
+
+def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+    """Advanced analytics interface with Remote AI enhancement options"""
+    st.header("🤖 Advanced SQL Server Analytics with Remote AI")
+    
+    # Show AI status
+    if hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "remote_ollama":
+        ai_status = f"🤖 **Remote AI Enhanced** - Using {analytics_engine.ai_type.replace('_', ' ').title()}"
+        if hasattr(analytics_engine, 'ollama_client') and analytics_engine.ollama_client:
+            connection_test = analytics_engine.ollama_client.test_connection()
+            connection_status = "🟢 Connected" if connection_test else "🔴 Disconnected"
+            st.success(f"{ai_status} ({connection_status})")
+        else:
+            st.warning(f"{ai_status} (Not Initialized)")
+    elif hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "transformers":
+        st.success("🤖 **Local AI Enhanced** - Using Transformers")
+    else:
+        st.info("📊 **Statistical Analytics** - Advanced mathematical analysis (Configure remote Ollama for AI enhancement)")
+    
+    st.markdown("**Comprehensive SQL Server statistical analysis with Remote AI enhancement**")
+    
+    # Analytics controls
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        analysis_type = st.selectbox("Analysis Type", [
+            "Performance Overview",
+            "Technical Analysis", 
+            "Optimization Recommendations",
+            "Risk Assessment"
+        ])
+    
+    with col2:
+        # Use the safe method to check remote AI enabled status
+        ai_enhancement = st.checkbox("Use Remote AI Enhancement", 
+                                   value=analytics_engine.has_remote_ai_enabled(),
+                                   disabled=not analytics_engine.has_remote_ai_enabled(),
+                                   help="Requires remote Ollama configuration")
+        
+        if st.button("🚀 Run Advanced Analysis", key="advanced_analytics"):
+            with st.spinner("🔒 Performing comprehensive SQL Server analysis with Remote AI..."):
+                # Temporarily modify AI setting if user unchecked it
+                original_ai_setting = analytics_engine.has_remote_ai_enabled()
+                if hasattr(analytics_engine, '_remote_ai_enabled') and not ai_enhancement:
+                    analytics_engine._remote_ai_enabled = False
+                
+                analysis = analytics_engine.analyze_performance_data(data)
+                
+                # Restore original setting
+                if hasattr(analytics_engine, '_remote_ai_enabled'):
+                    analytics_engine._remote_ai_enabled = original_ai_setting
+                
+                # Map analysis type to result key
+                analysis_map = {
+                    "Performance Overview": "executive_summary",
+                    "Technical Analysis": "technical_analysis",
+                    "Optimization Recommendations": "optimization_recommendations", 
+                    "Risk Assessment": "risk_assessment"
+                }
+                
+                result_key = analysis_map.get(analysis_type, "executive_summary")
+                
+                if result_key in analysis:
+                    st.markdown(f'<div class="analytics-insight">{analysis[result_key]}</div>', 
+                               unsafe_allow_html=True)
+                else:
+                    st.error("Analysis temporarily unavailable")
+    
+    # Performance insights
+    if not data.empty:
+        st.subheader("🔍 Automated SQL Server Performance Insights")
+        
+        # Generate automated insights
+        insights = generate_advanced_insights(data)
+        
+        for insight in insights:
+            if insight['type'] == 'critical':
+                st.markdown(f'<div class="alert-critical"><strong>🚨 {insight["title"]}</strong><br>{insight["message"]}</div>', 
+                           unsafe_allow_html=True)
+            elif insight['type'] == 'warning':
+                st.markdown(f'<div class="alert-warning"><strong>⚠️ {insight["title"]}</strong><br>{insight["message"]}</div>', 
+                           unsafe_allow_html=True)
+            elif insight['type'] == 'success':
+                st.markdown(f'<div class="alert-success"><strong>✅ {insight["title"]}</strong><br>{insight["message"]}</div>', 
+                           unsafe_allow_html=True)
+
+def generate_advanced_insights(data: pd.DataFrame) -> List[Dict]:
+    """Generate advanced statistical insights for SQL Server"""
+    insights = []
+    
+    # Statistical analysis
+    avg_time = data['execution_time_ms'].mean()
+    std_time = data['execution_time_ms'].std()
+    p95_time = data['execution_time_ms'].quantile(0.95)
+    
+    # Performance distribution analysis
+    slow_queries = (data['execution_time_ms'] > 5000).sum()
+    slow_rate = (slow_queries / len(data) * 100) if len(data) > 0 else 0
+    
+    # Variability analysis
+    coefficient_of_variation = (std_time / avg_time) if avg_time > 0 else 0
+    
+    if slow_rate > 10:
+        insights.append({
+            'type': 'critical',
+            'title': 'Critical SQL Server Performance Issue',
+            'message': f'{slow_rate:.1f}% of queries exceed 5 second threshold. Consider Query Store analysis and index optimization.'
+        })
+    elif slow_rate > 5:
+        insights.append({
+            'type': 'warning',
+            'title': 'SQL Server Performance Degradation',
+            'message': f'{slow_rate:.1f}% of queries are slow. Review execution plans and consider Database Engine Tuning Advisor.'
+        })
+    elif slow_rate < 1:
+        insights.append({
+            'type': 'success', 
+            'title': 'Excellent SQL Server Performance',
+            'message': f'Only {slow_rate:.1f}% of queries are slow. SQL Server is performing optimally.'
+        })
+    
+    # Performance consistency analysis
+    if coefficient_of_variation > 1.0:
+        insights.append({
+            'type': 'warning',
+            'title': 'High SQL Server Performance Variability',
+            'message': f'Response time variability is high (CV: {coefficient_of_variation:.2f}). Check for parameter sniffing and plan cache issues.'
+        })
+    elif coefficient_of_variation < 0.3:
+        insights.append({
+            'type': 'success',
+            'title': 'Consistent SQL Server Performance',
+            'message': f'Response times are very consistent (CV: {coefficient_of_variation:.2f}). Query plan stability is excellent.'
+        })
+    
+    # Resource utilization insights
+    avg_cpu = data['cpu_usage_percent'].mean()
+    if avg_cpu > 85:
+        insights.append({
+            'type': 'critical',
+            'title': 'Critical SQL Server CPU Usage',
+            'message': f'Average CPU usage is {avg_cpu:.1f}%. Consider scaling up or implementing Resource Governor.'
+        })
+    elif avg_cpu > 70:
+        insights.append({
+            'type': 'warning',
+            'title': 'High SQL Server CPU Usage',
+            'message': f'Average CPU usage is {avg_cpu:.1f}%. Monitor wait statistics and consider performance tuning.'
+        })
+    
+    # Cache performance insights
+    avg_cache = data['cache_hit_ratio'].mean()
+    if avg_cache < 0.7:
+        insights.append({
+            'type': 'warning',
+            'title': 'Poor SQL Server Buffer Cache Performance', 
+            'message': f'Buffer cache hit ratio is {avg_cache:.1f}%. Consider increasing max server memory or optimizing queries.'
+        })
+    elif avg_cache > 0.95:
+        insights.append({
+            'type': 'success',
+            'title': 'Excellent SQL Server Buffer Cache Performance',
+            'message': f'Buffer cache hit ratio is {avg_cache:.1f}%. Memory configuration is optimal.'
+        })
+    
+    return insights
 
 def show_secure_alert_management(config: EnterpriseSecurityConfig, data: pd.DataFrame):
     """Secure alert management interface for SQL Server"""
