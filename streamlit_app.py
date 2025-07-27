@@ -298,14 +298,14 @@ class CloudCompatibleSQLServerInterface:
                 ELSE ''
             END as wait_event
         FROM sys.dm_exec_query_stats qs
-        WHERE qs.creation_time > DATEADD(HOUR, ?, GETDATE())
+        WHERE qs.creation_time > DATEADD(HOUR, -{hours}, GETDATE())
             AND qs.total_elapsed_time > 0
         ORDER BY qs.total_elapsed_time DESC
         """
         
         try:
             # Execute with proper parameter passing
-            result = self.execute_query(query, [-hours])  # Negative hours for DATEADD
+            result = self.execute_query(query, None)  # Negative hours for DATEADD
             
             # Validate result has expected columns
             expected_columns = [
@@ -840,7 +840,7 @@ class SecureSQLServerInterface:
             return self._generate_demo_data()
         
         # FIXED: Use direct string formatting instead of parameterized query
-        # This avoids the pymssql parameter substitution issues
+        # This avoids the pymssql parameter substitution issues completely
         query = f"""
         SELECT TOP 1000
             qs.creation_time as timestamp,
