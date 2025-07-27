@@ -24,6 +24,7 @@ import pymssql
 import sqlalchemy
 from sqlalchemy import create_engine, text
 
+from __future__ import annotations
 logger = logging.getLogger(__name__)
 
 # Optional database imports with fallbacks
