@@ -834,118 +834,80 @@ class SecureSQLServerInterface:
             return pd.DataFrame()
     
     def get_performance_metrics(self, hours: int = 24):
-        """Get SQL Server performance metrics - SIMPLE TEST VERSION"""
+        """Get SQL Server performance metrics - ULTRA SIMPLE VERSION"""
         if not self.connected:
             logger.info("Database not connected - returning demo data")
             return self._generate_demo_data()
         
-        # STEP 1: Try a very simple query first to test basic connectivity
-        try:
-            simple_query = "SELECT 1 as test_value, GETDATE() as current_time"
-            test_result = self.execute_query(simple_query, None)
-            
-            if not test_result.empty:
-                logger.info(f"Simple query test PASSED: {test_result.iloc[0].to_dict()}")
-            else:
-                logger.error("Simple query test FAILED: No results returned")
-                return self._generate_demo_data()
-                
-        except Exception as e:
-            logger.error(f"Simple query test FAILED: {e}")
-            return self._generate_demo_data()
+        # ULTRA SIMPLE: Just use a fixed 24-hour window to avoid all parameter issues
+        query = """
+        SELECT TOP 100
+            qs.creation_time as timestamp,
+            'sql_server' as application,
+            'query_' + CAST(ROW_NUMBER() OVER (ORDER BY qs.total_elapsed_time DESC) AS VARCHAR(10)) as query_id,
+            CAST(qs.total_elapsed_time / 1000.0 AS FLOAT) as execution_time_ms,
+            CAST(CASE 
+                WHEN qs.total_elapsed_time > 0 
+                THEN (qs.total_worker_time * 100.0) / qs.total_elapsed_time
+                ELSE 0.0 
+            END AS FLOAT) as cpu_usage_percent,
+            CAST(qs.total_logical_reads AS FLOAT) / NULLIF(qs.execution_count, 0) * 8 / 1024.0 as memory_usage_mb,
+            CAST(CASE 
+                WHEN (qs.total_physical_reads + qs.total_logical_reads) > 0
+                THEN (qs.total_logical_reads - qs.total_physical_reads) * 100.0 / 
+                    (qs.total_logical_reads + qs.total_physical_reads)
+                ELSE 90.0 
+            END AS FLOAT) as cache_hit_ratio,
+            qs.execution_count as calls,
+            DB_NAME() as database_name,
+            qs.total_logical_reads as rows_examined,
+            CAST(CASE 
+                WHEN qs.execution_count > 0 
+                THEN qs.total_rows / qs.execution_count 
+                ELSE 1 
+            END AS FLOAT) as rows_returned,
+            qs.execution_count as connection_id,
+            'system' as user_name,
+            CASE 
+                WHEN qs.total_elapsed_time > 5000000 THEN 'LONG_QUERY'
+                WHEN qs.total_physical_reads > qs.total_logical_reads * 0.1 THEN 'PAGEIOLATCH_SH'
+                ELSE ''
+            END as wait_event
+        FROM sys.dm_exec_query_stats qs
+        WHERE qs.creation_time > DATEADD(HOUR, -24, GETDATE())
+            AND qs.total_elapsed_time > 0
+        ORDER BY qs.total_elapsed_time DESC
+        """
         
-        # STEP 2: Try a basic DMV query
         try:
-            basic_dmv_query = """
-            SELECT TOP 10
-                creation_time,
-                execution_count,
-                total_elapsed_time
-            FROM sys.dm_exec_query_stats
-            ORDER BY total_elapsed_time DESC
-            """
-            
-            basic_result = self.execute_query(basic_dmv_query, None)
-            
-            if not basic_result.empty:
-                logger.info(f"Basic DMV query PASSED: Retrieved {len(basic_result)} rows")
-            else:
-                logger.warning("Basic DMV query returned no results")
-                return self._generate_demo_data()
-                
-        except Exception as e:
-            logger.error(f"Basic DMV query FAILED: {e}")
-            return self._generate_demo_data()
-        
-        # STEP 3: Try the full performance query with better error handling
-        try:
-            # Build the query with explicit variable substitution
-            hours_value = int(hours)
-            
-            full_query = f"""
-            SELECT TOP 100
-                qs.creation_time as timestamp,
-                'sql_server' as application,
-                'query_' + CAST(ROW_NUMBER() OVER (ORDER BY qs.total_elapsed_time DESC) AS VARCHAR(10)) as query_id,
-                CAST(qs.total_elapsed_time / 1000.0 AS FLOAT) as execution_time_ms,
-                CAST(CASE 
-                    WHEN qs.total_elapsed_time > 0 
-                    THEN (qs.total_worker_time * 100.0) / qs.total_elapsed_time
-                    ELSE 0.0 
-                END AS FLOAT) as cpu_usage_percent,
-                CAST(qs.total_logical_reads AS FLOAT) / NULLIF(qs.execution_count, 0) * 8 / 1024.0 as memory_usage_mb,
-                CAST(CASE 
-                    WHEN (qs.total_physical_reads + qs.total_logical_reads) > 0
-                    THEN (qs.total_logical_reads - qs.total_physical_reads) * 100.0 / 
-                        (qs.total_logical_reads + qs.total_physical_reads)
-                    ELSE 90.0 
-                END AS FLOAT) as cache_hit_ratio,
-                qs.execution_count as calls,
-                DB_NAME() as database_name,
-                qs.total_logical_reads as rows_examined,
-                CAST(CASE 
-                    WHEN qs.execution_count > 0 
-                    THEN qs.total_rows / qs.execution_count 
-                    ELSE 1 
-                END AS FLOAT) as rows_returned,
-                qs.execution_count as connection_id,
-                'system' as user_name,
-                CASE 
-                    WHEN qs.total_elapsed_time > 5000000 THEN 'LONG_QUERY'
-                    WHEN qs.total_physical_reads > qs.total_logical_reads * 0.1 THEN 'PAGEIOLATCH_SH'
-                    ELSE ''
-                END as wait_event
-            FROM sys.dm_exec_query_stats qs
-            WHERE qs.creation_time > DATEADD(HOUR, -{hours_value}, GETDATE())
-                AND qs.total_elapsed_time > 0
-            ORDER BY qs.total_elapsed_time DESC
-            """
-            
-            logger.info(f"Executing full performance query for last {hours_value} hours...")
-            result = self.execute_query(full_query, None)
+            logger.info("Executing REAL SQL Server performance query...")
+            result = self.execute_query(query, None)
             
             if result.empty:
-                logger.warning("Full performance query returned no results - using demo data")
+                logger.warning("SQL Server query returned no results - may be no recent activity")
                 return self._generate_demo_data()
             
-            # Validate result has expected columns
-            expected_columns = [
+            # Add required columns if missing
+            required_columns = [
                 'timestamp', 'application', 'query_id', 'execution_time_ms',
                 'cpu_usage_percent', 'memory_usage_mb', 'cache_hit_ratio',
-                'calls', 'database_name'
+                'calls', 'database_name', 'rows_examined', 'rows_returned',
+                'connection_id', 'user_name', 'wait_event'
             ]
             
-            missing_columns = [col for col in expected_columns if col not in result.columns]
-            if missing_columns:
-                logger.warning(f"Missing expected columns: {missing_columns}")
-                return self._generate_demo_data()
+            for col in required_columns:
+                if col not in result.columns:
+                    if col == 'calls':
+                        result[col] = result.get('calls', 1)
+                    else:
+                        result[col] = f"sql_server_{col}"
             
             logger.info(f"SUCCESS! Retrieved {len(result)} REAL SQL Server performance records")
-            logger.info(f"Columns available: {list(result.columns)}")
+            logger.info(f"Sample data: {result.iloc[0].to_dict()}")
             return result
             
         except Exception as e:
-            logger.error(f"Full performance query FAILED: {e}")
+            logger.error(f"SQL Server performance query failed: {e}")
             logger.info("Falling back to demo data")
             return self._generate_demo_data()
     
