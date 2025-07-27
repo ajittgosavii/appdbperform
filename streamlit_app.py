@@ -258,6 +258,7 @@ class CloudCompatibleSQLServerInterface:
             return self._get_empty_performance_dataframe()
     
     def get_performance_metrics(self, hours: int = 24):
+        logger.info("DEBUG: Running get_performance_metrics - VERSION 2.0")
         """Get SQL Server performance metrics - FIXED VERSION"""
         if not self.connected:
             logger.info("Database not connected - returning demo data")
@@ -298,7 +299,7 @@ class CloudCompatibleSQLServerInterface:
                 ELSE ''
             END as wait_event
         FROM sys.dm_exec_query_stats qs
-        WHERE qs.creation_time > DATEADD(HOUR, -{hours}, GETDATE())
+        WHERE qs.creation_time > DATEADD(HOUR, -24, GETDATE())
             AND qs.total_elapsed_time > 0
         ORDER BY qs.total_elapsed_time DESC
         """
