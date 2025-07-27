@@ -2806,6 +2806,7 @@ Status: {'✅ Enabled' if ai_enabled else '❌ Disabled'}
         - **Model:** Not configured  
         - **Timeout:** 30s""")
         
+        st.markdown("""
         **Setup Instructions:**
         
         **1. Install Ollama on your EC2 instance:**
