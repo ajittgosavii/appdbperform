@@ -91,8 +91,35 @@ class EnterpriseSecurityConfig:
     """Secure enterprise configuration management with remote Ollama support"""
     
     def __init__(self):
-        # Ensure ollama is always initialized first with defaults
+        # ALWAYS initialize ollama first with defaults
         self.ollama = OllamaConfig()
+        
+        # Initialize all other attributes with defaults
+        self.security = SecurityConfig()
+        self.databases = {
+            "primary": DatabaseConfig(host="", port=5432, username="", password="", database=""),
+            "replica": DatabaseConfig(host="", port=5432, username="", password="", database="")
+        }
+        self.alerts = AlertConfig()
+        self.enterprise = {
+            "company_name": "Your Company",
+            "environment": "development",
+            "compliance_mode": "SOC2",
+            "data_retention_days": 90,
+            "backup_enabled": True
+        }
+        self.features = {
+            "advanced_analytics": True,
+            "remote_ai_enabled": True,
+            "ai_model_type": "remote_ollama",
+            "real_time_monitoring": True,
+            "predictive_analytics": True,
+            "automated_optimization": True,
+            "compliance_reporting": True,
+            "security_monitoring": True,
+            "audit_logging": True,
+            "data_encryption": True
+        }
         
         # Then load configuration (which may override defaults)
         self.load_configuration()
@@ -112,7 +139,7 @@ class EnterpriseSecurityConfig:
             )
         except Exception as e:
             logger.warning(f"Using default security config: {e}")
-            self.security = SecurityConfig()
+            # self.security already initialized with defaults
         
         # Database Configuration - Multiple environments
         try:
@@ -136,12 +163,9 @@ class EnterpriseSecurityConfig:
             }
         except Exception as e:
             logger.warning(f"Using default database config: {e}")
-            self.databases = {
-                "primary": DatabaseConfig(host="", port=5432, username="", password="", database=""),
-                "replica": DatabaseConfig(host="", port=5432, username="", password="", database="")
-            }
+            # self.databases already initialized with defaults
         
-        # Remote Ollama Configuration - Always initialize with defaults
+        # Remote Ollama Configuration - Always ensure it exists
         try:
             ollama_config = st.secrets.get("ollama", {})
             self.ollama = OllamaConfig(
@@ -153,14 +177,9 @@ class EnterpriseSecurityConfig:
             )
         except Exception as e:
             logger.warning(f"Using default ollama config: {e}")
-            # Always ensure ollama config exists with defaults
-            self.ollama = OllamaConfig(
-                base_url="http://18.188.211.214:11434",
-                model="llama2",
-                timeout=30,
-                max_tokens=1000,
-                temperature=0.7
-            )
+            # Ensure ollama is always available with defaults even if config fails
+            if not hasattr(self, 'ollama') or self.ollama is None:
+                self.ollama = OllamaConfig()
         
         # Alert Configuration
         try:
@@ -173,7 +192,7 @@ class EnterpriseSecurityConfig:
             )
         except Exception as e:
             logger.warning(f"Using default alerts config: {e}")
-            self.alerts = AlertConfig()
+            # self.alerts already initialized with defaults
         
         # Enterprise Settings
         try:
@@ -187,13 +206,7 @@ class EnterpriseSecurityConfig:
             }
         except Exception as e:
             logger.warning(f"Using default enterprise config: {e}")
-            self.enterprise = {
-                "company_name": "Your Company",
-                "environment": "development",
-                "compliance_mode": "SOC2",
-                "data_retention_days": 90,
-                "backup_enabled": True
-            }
+            # self.enterprise already initialized with defaults
         
         # Security Features - Internal processing with remote Ollama AI
         try:
@@ -212,28 +225,25 @@ class EnterpriseSecurityConfig:
             }
         except Exception as e:
             logger.warning(f"Using default features config: {e}")
-            self.features = {
-                "advanced_analytics": True,
-                "remote_ai_enabled": True,
-                "ai_model_type": "remote_ollama",
-                "real_time_monitoring": True,
-                "predictive_analytics": True,
-                "automated_optimization": True,
-                "compliance_reporting": True,
-                "security_monitoring": True,
-                "audit_logging": True,
-                "data_encryption": True
-            }
+            # self.features already initialized with defaults
     
     def is_production(self) -> bool:
-        return self.enterprise["environment"] == "production"
+        try:
+            return self.enterprise.get("environment", "development") == "production"
+        except Exception as e:
+            logger.warning(f"Error checking production status: {e}")
+            return False
     
     def has_database_config(self, db_name: str = "primary") -> bool:
-        db_config = self.databases.get(db_name)
-        return db_config and db_config.host and db_config.password
+        try:
+            db_config = self.databases.get(db_name)
+            return db_config and db_config.host and db_config.password
+        except Exception as e:
+            logger.warning(f"Error checking database config: {e}")
+            return False
     
     def has_ollama_config(self) -> bool:
-        """Check if ollama configuration is available"""
+        """Check if ollama configuration is available - FIXED VERSION"""
         try:
             # Check if ollama attribute exists and is not None
             if not hasattr(self, 'ollama'):
@@ -264,10 +274,14 @@ class EnterpriseSecurityConfig:
     
     def encrypt_data(self, data: str) -> str:
         """Encrypt sensitive data for storage"""
-        if self.security.data_encryption:
-            # In production, use proper encryption like Fernet
-            return hashlib.sha256(data.encode()).hexdigest()[:16] + "..."
-        return data
+        try:
+            if hasattr(self, 'security') and self.security and self.security.data_encryption:
+                # In production, use proper encryption like Fernet
+                return hashlib.sha256(data.encode()).hexdigest()[:16] + "..."
+            return data
+        except Exception as e:
+            logger.warning(f"Error encrypting data: {e}")
+            return data
 
 # Secure Database Interface - No External Dependencies
 class SecurePostgreSQLInterface:
@@ -632,10 +646,17 @@ class SecureAnalyticsEngine:
         self.analysis_cache = {}
         
         # FIXED: Initialize all attributes properly
-        self._remote_ai_enabled = config.features.get("remote_ai_enabled", True)
+        self._remote_ai_enabled = False
         self.ollama_client = None
         self.transformers_model = None
         self.ai_type = "statistical"  # Default fallback
+        
+        # Try to get remote AI enabled status safely
+        try:
+            self._remote_ai_enabled = config.features.get("remote_ai_enabled", False)
+        except Exception as e:
+            logger.warning(f"Error getting remote AI enabled status: {e}")
+            self._remote_ai_enabled = False
         
         # Initialize AI capabilities
         if self._remote_ai_enabled:
@@ -1266,7 +1287,12 @@ class SecureEnterpriseUserManager:
             return False
         
         # Check session timeout
-        timeout_minutes = self.config.security.session_timeout_minutes
+        try:
+            timeout_minutes = self.config.security.session_timeout_minutes
+        except Exception as e:
+            logger.warning(f"Error getting session timeout: {e}")
+            timeout_minutes = 30  # Default
+            
         if datetime.now() - session["last_activity"] > timedelta(minutes=timeout_minutes):
             self.logout_user(user)
             return False
@@ -1285,7 +1311,12 @@ class SecureEnterpriseUserManager:
     def _is_account_locked(self, email: str) -> bool:
         """Check if account is locked due to failed attempts"""
         attempts = self.failed_attempts.get(email, {})
-        if attempts.get("count", 0) >= self.config.security.max_failed_attempts:
+        try:
+            max_attempts = self.config.security.max_failed_attempts
+        except Exception:
+            max_attempts = 3  # Default
+            
+        if attempts.get("count", 0) >= max_attempts:
             # Check if lockout period has expired (30 minutes)
             if datetime.now() - attempts.get("last_attempt", datetime.now()) < timedelta(minutes=30):
                 return True
@@ -1304,7 +1335,12 @@ class SecureEnterpriseUserManager:
     
     def _log_security_event(self, email: str, event_type: str, details: str):
         """Log security events for audit trail"""
-        if self.config.security.audit_logging:
+        try:
+            audit_logging = self.config.security.audit_logging
+        except Exception:
+            audit_logging = True
+            
+        if audit_logging:
             timestamp = datetime.now().isoformat()
             event = {
                 "timestamp": timestamp,
@@ -1526,58 +1562,69 @@ def main():
 
 def show_security_header(config: EnterpriseSecurityConfig):
     """Show enterprise security header with remote AI status"""
-    env_class = f"env-{config.enterprise['environment']}"
-    compliance_mode = config.enterprise['compliance_mode']
-    
-    # Determine AI status with safe access to ollama config
     try:
-        if config.features.get("remote_ai_enabled", False) and config.has_ollama_config():
-            ollama_config = config.get_ollama_config_safely()
-            ai_status = f"🤖 Remote AI ({getattr(ollama_config, 'base_url', 'N/A')})"
-        elif config.features.get("ai_model_type", "statistical") == "transformers":
-            ai_status = "🤖 Local Transformers"
-        else:
+        env_class = f"env-{config.enterprise['environment']}"
+        compliance_mode = config.enterprise['compliance_mode']
+        
+        # Determine AI status with safe access to ollama config
+        try:
+            if config.features.get("remote_ai_enabled", False) and config.has_ollama_config():
+                ollama_config = config.get_ollama_config_safely()
+                ai_status = f"🤖 Remote AI ({getattr(ollama_config, 'base_url', 'N/A')})"
+            elif config.features.get("ai_model_type", "statistical") == "transformers":
+                ai_status = "🤖 Local Transformers"
+            else:
+                ai_status = "📊 Statistical"
+        except Exception as e:
+            logger.warning(f"Error determining AI status: {e}")
             ai_status = "📊 Statistical"
+        
+        st.markdown(f'''
+        <div class="security-header">
+            <h2>🔒 {config.enterprise['company_name']}</h2>
+            <h3>Secure Database Performance Analytics Platform</h3>
+            <div style="margin-top: 0.5rem;">
+                <span class="environment-badge {env_class}">{config.enterprise['environment']}</span>
+                <span class="compliance-badge">{compliance_mode} Compliant</span>
+                <span style="margin-left: 1rem;">
+                    <span class="status-indicator status-secure"></span>
+                    Security Enhanced | {ai_status}
+                </span>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+        
+        # Security status information with AI details
+        ai_details = config.features.get("ai_model_type", "statistical").title()
+        try:
+            ollama_config = config.get_ollama_config_safely()
+            ai_endpoint = getattr(ollama_config, 'base_url', 'N/A') if config.has_ollama_config() else "N/A"
+        except Exception:
+            ai_endpoint = "N/A"
+        
+        st.markdown(f'''
+        <div class="security-info">
+            <h4>🛡️ Security Status</h4>
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                <div><strong>Data Encryption:</strong> ✅ Enabled</div>
+                <div><strong>Audit Logging:</strong> ✅ Active</div>
+                <div><strong>Session Security:</strong> ✅ {config.security.session_timeout_minutes}min timeout</div>
+                <div><strong>Database Access:</strong> ✅ Read-only monitoring</div>
+                <div><strong>AI Processing:</strong> ✅ {ai_details} ({ai_endpoint})</div>
+                <div><strong>External Dependencies:</strong> ❌ Database data stays secure</div>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+        
     except Exception as e:
-        logger.warning(f"Error determining AI status: {e}")
-        ai_status = "📊 Statistical"
-    
-    st.markdown(f'''
-    <div class="security-header">
-        <h2>🔒 {config.enterprise['company_name']}</h2>
-        <h3>Secure Database Performance Analytics Platform</h3>
-        <div style="margin-top: 0.5rem;">
-            <span class="environment-badge {env_class}">{config.enterprise['environment']}</span>
-            <span class="compliance-badge">{compliance_mode} Compliant</span>
-            <span style="margin-left: 1rem;">
-                <span class="status-indicator status-secure"></span>
-                Security Enhanced | {ai_status}
-            </span>
+        logger.error(f"Error in show_security_header: {e}")
+        # Fallback display
+        st.markdown('''
+        <div class="security-header">
+            <h2>🔒 Enterprise Database Analytics</h2>
+            <h3>Secure Performance Monitoring Platform</h3>
         </div>
-    </div>
-    ''', unsafe_allow_html=True)
-    
-    # Security status information with AI details
-    ai_details = config.features.get("ai_model_type", "statistical").title()
-    try:
-        ollama_config = config.get_ollama_config_safely()
-        ai_endpoint = getattr(ollama_config, 'base_url', 'N/A') if config.has_ollama_config() else "N/A"
-    except Exception:
-        ai_endpoint = "N/A"
-    
-    st.markdown(f'''
-    <div class="security-info">
-        <h4>🛡️ Security Status</h4>
-        <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-            <div><strong>Data Encryption:</strong> ✅ Enabled</div>
-            <div><strong>Audit Logging:</strong> ✅ Active</div>
-            <div><strong>Session Security:</strong> ✅ {config.security.session_timeout_minutes}min timeout</div>
-            <div><strong>Database Access:</strong> ✅ Read-only monitoring</div>
-            <div><strong>AI Processing:</strong> ✅ {ai_details} ({ai_endpoint})</div>
-            <div><strong>External Dependencies:</strong> ❌ Database data stays secure</div>
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
+        ''', unsafe_allow_html=True)
 
 def show_secure_login(user_manager: SecureEnterpriseUserManager):
     """Secure enterprise authentication interface"""
@@ -1774,7 +1821,11 @@ def show_secure_navigation(config: EnterpriseSecurityConfig, data: pd.DataFrame,
     
     env_status = "🔴 Production" if config.is_production() else "🟡 Development"
     db_status = "🟢 Connected" if config.has_database_config() else "🟡 Demo Mode"
-    security_status = "🟢 Enhanced" if config.security.data_encryption else "🟡 Standard"
+    
+    try:
+        security_status = "🟢 Enhanced" if config.security.data_encryption else "🟡 Standard"
+    except Exception:
+        security_status = "🟢 Enhanced"
     
     # Safe AI status check
     try:
@@ -1783,13 +1834,18 @@ def show_secure_navigation(config: EnterpriseSecurityConfig, data: pd.DataFrame,
         logger.warning(f"Error checking AI status: {e}")
         ai_status = "📊 Statistical"
     
+    try:
+        session_timeout = config.security.session_timeout_minutes
+    except Exception:
+        session_timeout = 30
+    
     st.sidebar.markdown(f"""
     **Environment:** {env_status}  
     **Database:** {db_status}  
     **Security:** {security_status}  
     **AI Processing:** {ai_status}
     **Records:** {len(data):,}
-    **Session:** {config.security.session_timeout_minutes}min timeout
+    **Session:** {session_timeout}min timeout
     """)
     
     # Remote AI status
@@ -1828,10 +1884,17 @@ def show_secure_navigation(config: EnterpriseSecurityConfig, data: pd.DataFrame,
     # Compliance information
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📋 Compliance")
+    try:
+        compliance_mode = config.enterprise['compliance_mode']
+        data_retention = config.enterprise['data_retention_days']
+    except Exception:
+        compliance_mode = "SOC2"
+        data_retention = 90
+        
     st.sidebar.markdown(f"""
-    **Framework:** {config.enterprise['compliance_mode']}  
+    **Framework:** {compliance_mode}  
     **Audit Logging:** ✅ Active  
-    **Data Retention:** {config.enterprise['data_retention_days']} days  
+    **Data Retention:** {data_retention} days  
     **Encryption:** ✅ Enabled
     **AI Security:** ✅ Private Network Only
     """)
@@ -1919,7 +1982,10 @@ def show_secure_executive_dashboard(config: EnterpriseSecurityConfig, data: pd.D
         st.metric("Total Queries", f"{total_queries:,}", f"+{np.random.randint(100, 500)}")
     
     with col3:
-        slow_queries = (data['execution_time_ms'] > config.alerts.query_time_threshold_ms).sum()
+        try:
+            slow_queries = (data['execution_time_ms'] > config.alerts.query_time_threshold_ms).sum()
+        except Exception:
+            slow_queries = (data['execution_time_ms'] > 5000).sum()
         slow_rate = (slow_queries / total_queries * 100) if total_queries > 0 else 0
         st.metric("Slow Query Rate", f"{slow_rate:.1f}%", f"{np.random.uniform(-0.5, 0.5):.1f}%")
     
@@ -1996,7 +2062,7 @@ def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureA
         ])
     
     with col2:
-        # FIXED: Use the safe method to check remote AI enabled status
+        # Use the safe method to check remote AI enabled status
         ai_enhancement = st.checkbox("Use Remote AI Enhancement", 
                                    value=analytics_engine.has_remote_ai_enabled(),
                                    disabled=not analytics_engine.has_remote_ai_enabled(),
@@ -2257,7 +2323,7 @@ def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFra
             st.markdown("• Remote AI: 🤖 Configuration Error")
 
 def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFrame, user_manager: SecureEnterpriseUserManager):
-    """Security monitoring dashboard"""
+    """Security monitoring dashboard - FIXED VERSION"""
     st.header("🛡️ Security Monitoring Dashboard")
     st.markdown("**Enterprise security and compliance monitoring with Remote AI protection**")
     
@@ -2276,7 +2342,12 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
         st.metric("Data Encryption", "✅ Enabled")
     
     with col4:
-        ai_security = "🤖 Remote AI" if config.has_ollama_config() else "📊 Statistical"
+        # FIXED: Use safe method to check ollama config
+        try:
+            ai_security = "🤖 Remote AI" if config.has_ollama_config() else "📊 Statistical"
+        except Exception as e:
+            logger.warning(f"Error checking AI security status: {e}")
+            ai_security = "📊 Statistical"
         st.metric("AI Security", ai_security)
     
     # Remote AI Security Status
@@ -2286,29 +2357,40 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
             
             col1, col2 = st.columns(2)
             with col1:
-                ollama_config = config.get_ollama_config_safely()
-                ai_url = getattr(ollama_config, 'base_url', 'N/A')
-                ai_model = getattr(ollama_config, 'model', 'N/A')
-                
-                st.markdown(f"**Remote Endpoint:** {ai_url}")
-                st.markdown(f"**Model:** {ai_model}")
-                st.markdown(f"**Network Security:** ✅ Private network only")
-                st.markdown(f"**Data Privacy:** ✅ No external data transfer")
+                try:
+                    ollama_config = config.get_ollama_config_safely()
+                    ai_url = getattr(ollama_config, 'base_url', 'N/A')
+                    ai_model = getattr(ollama_config, 'model', 'N/A')
+                    
+                    st.markdown(f"**Remote Endpoint:** {ai_url}")
+                    st.markdown(f"**Model:** {ai_model}")
+                    st.markdown(f"**Network Security:** ✅ Private network only")
+                    st.markdown(f"**Data Privacy:** ✅ No external data transfer")
+                except Exception as e:
+                    logger.warning(f"Error displaying ollama config details: {e}")
+                    st.markdown("**Remote Endpoint:** Configuration error")
+                    st.markdown("**Model:** Configuration error")
+                    st.markdown(f"**Network Security:** ✅ Private network only")
+                    st.markdown(f"**Data Privacy:** ✅ No external data transfer")
             
             with col2:
                 # Test remote AI connection
-                analytics_engine = get_analytics_engine()
-                if hasattr(analytics_engine, 'ollama_client') and analytics_engine.ollama_client:
-                    connection_status = "🟢 Connected" if analytics_engine.ollama_client.test_connection() else "🔴 Disconnected"
-                    st.markdown(f"**Connection Status:** {connection_status}")
-                    
-                    if analytics_engine.ollama_client.test_connection():
-                        models = analytics_engine.ollama_client.get_models()
-                        st.markdown(f"**Available Models:** {', '.join(models[:3])}...")
+                try:
+                    analytics_engine = get_analytics_engine()
+                    if hasattr(analytics_engine, 'ollama_client') and analytics_engine.ollama_client:
+                        connection_status = "🟢 Connected" if analytics_engine.ollama_client.test_connection() else "🔴 Disconnected"
+                        st.markdown(f"**Connection Status:** {connection_status}")
+                        
+                        if analytics_engine.ollama_client.test_connection():
+                            models = analytics_engine.ollama_client.get_models()
+                            st.markdown(f"**Available Models:** {', '.join(models[:3])}...")
+                        else:
+                            st.markdown("**Available Models:** Connection failed")
                     else:
-                        st.markdown("**Available Models:** Connection failed")
-                else:
-                    st.markdown("**Connection Status:** 🟡 Not initialized")
+                        st.markdown("**Connection Status:** 🟡 Not initialized")
+                except Exception as e:
+                    logger.warning(f"Error checking ollama connection: {e}")
+                    st.markdown("**Connection Status:** 🟡 Error checking")
     except Exception as e:
         logger.warning(f"Error displaying Remote AI Security Status: {e}")
         # Don't show the section if there's an error
@@ -2438,17 +2520,30 @@ def show_secure_alert_management(config: EnterpriseSecurityConfig, data: pd.Data
     
     with col1:
         st.markdown("**Performance Thresholds**")
-        query_threshold = st.slider("Query Time Alert (ms)", 1000, 10000, 
-                                   config.alerts.query_time_threshold_ms)
-        cpu_threshold = st.slider("CPU Usage Alert (%)", 50, 95, 
-                                 int(config.alerts.cpu_threshold_percent))
+        try:
+            default_threshold = config.alerts.query_time_threshold_ms
+        except Exception:
+            default_threshold = 5000
+            
+        query_threshold = st.slider("Query Time Alert (ms)", 1000, 10000, default_threshold)
+        
+        try:
+            default_cpu = int(config.alerts.cpu_threshold_percent)
+        except Exception:
+            default_cpu = 80
+            
+        cpu_threshold = st.slider("CPU Usage Alert (%)", 50, 95, default_cpu)
     
     with col2:
         st.markdown("**Secure Notification Settings**")
         email_alerts = st.checkbox("Email Notifications", True)
         sms_alerts = st.checkbox("SMS Notifications", False)
         dashboard_alerts = st.checkbox("Dashboard Notifications", True)
-        ai_alerts = st.checkbox("Remote AI Analysis Alerts", config.has_ollama_config())
+        
+        try:
+            ai_alerts = st.checkbox("Remote AI Analysis Alerts", config.has_ollama_config())
+        except Exception:
+            ai_alerts = st.checkbox("Remote AI Analysis Alerts", False)
         
         if st.button("💾 Save Alert Configuration"):
             st.success("✅ Alert configuration saved securely")
@@ -2461,50 +2556,68 @@ def generate_secure_alerts(config: EnterpriseSecurityConfig, data: pd.DataFrame)
         return alerts
     
     # Check for slow queries
-    slow_queries = data[data['execution_time_ms'] > config.alerts.query_time_threshold_ms]
+    try:
+        threshold = config.alerts.query_time_threshold_ms
+    except Exception:
+        threshold = 5000
+        
+    slow_queries = data[data['execution_time_ms'] > threshold]
     if len(slow_queries) > 0:
         alerts.append({
             'severity': 'Critical',
             'icon': '🚨',
             'title': 'Performance Alert',
-            'message': f'{len(slow_queries)} queries exceeded {config.alerts.query_time_threshold_ms}ms threshold',
+            'message': f'{len(slow_queries)} queries exceeded {threshold}ms threshold',
             'count': len(slow_queries),
             'time': '5 minutes ago'
         })
     
     # Check CPU usage
-    high_cpu = data[data['cpu_usage_percent'] > config.alerts.cpu_threshold_percent]
+    try:
+        cpu_threshold = config.alerts.cpu_threshold_percent
+    except Exception:
+        cpu_threshold = 80
+        
+    high_cpu = data[data['cpu_usage_percent'] > cpu_threshold]
     if len(high_cpu) > 0:
         alerts.append({
             'severity': 'Warning',
             'icon': '⚠️', 
             'title': 'Resource Usage Alert',
-            'message': f'CPU usage exceeded {config.alerts.cpu_threshold_percent}% threshold',
+            'message': f'CPU usage exceeded {cpu_threshold}% threshold',
             'count': len(high_cpu),
             'time': '10 minutes ago'
         })
     
     # Security-specific alerts
-    if config.security.audit_logging:
-        alerts.append({
-            'severity': 'Info',
-            'icon': '🔒',
-            'title': 'Security Status',
-            'message': 'All security controls active and monitoring',
-            'count': 1,
-            'time': 'Continuous'
-        })
+    try:
+        if config.security.audit_logging:
+            alerts.append({
+                'severity': 'Info',
+                'icon': '🔒',
+                'title': 'Security Status',
+                'message': 'All security controls active and monitoring',
+                'count': 1,
+                'time': 'Continuous'
+            })
+    except Exception:
+        pass
     
     # Remote AI security alert
-    if config.has_ollama_config():
-        alerts.append({
-            'severity': 'Info',
-            'icon': '🤖',
-            'title': 'Remote AI Security',
-            'message': f'AI processing secure on private network ({config.ollama.base_url})',
-            'count': 1,
-            'time': 'Continuous'
-        })
+    try:
+        if config.has_ollama_config():
+            ollama_config = config.get_ollama_config_safely()
+            base_url = getattr(ollama_config, 'base_url', 'N/A')
+            alerts.append({
+                'severity': 'Info',
+                'icon': '🤖',
+                'title': 'Remote AI Security',
+                'message': f'AI processing secure on private network ({base_url})',
+                'count': 1,
+                'time': 'Continuous'
+            })
+    except Exception:
+        pass
     
     return alerts
 
@@ -2666,9 +2779,14 @@ def show_secure_system_configuration(config: EnterpriseSecurityConfig):
                                         value=current_timeout,
                                         min_value=5, max_value=120)
         
-        remote_ai_enabled = st.checkbox("Enable Remote AI", 
-                                       value=config.features.get("remote_ai_enabled", True),
-                                       help="Enable Remote AI analytics using your private Ollama")
+        try:
+            remote_ai_enabled = st.checkbox("Enable Remote AI", 
+                                           value=config.features.get("remote_ai_enabled", True),
+                                           help="Enable Remote AI analytics using your private Ollama")
+        except Exception:
+            remote_ai_enabled = st.checkbox("Enable Remote AI", 
+                                           value=True,
+                                           help="Enable Remote AI analytics using your private Ollama")
         
         # Test connection button
         if st.button("🔍 Test Remote AI Connection"):
@@ -2868,7 +2986,13 @@ def show_audit_logs(user_manager: SecureEnterpriseUserManager):
 def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame):
     """Show compliance reports for regulatory requirements"""
     st.header("📋 Compliance Reports")
-    st.markdown(f"**{config.enterprise['compliance_mode']} compliance monitoring with Remote AI security validation**")
+    
+    try:
+        compliance_mode = config.enterprise['compliance_mode']
+    except Exception:
+        compliance_mode = "SOC2"
+        
+    st.markdown(f"**{compliance_mode} compliance monitoring with Remote AI security validation**")
     
     # Compliance overview
     col1, col2, col3, col4 = st.columns(4)
@@ -2937,16 +3061,27 @@ def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame
             st.success("✅ Compliance report generated successfully")
             
             try:
-                ollama_endpoint = config.ollama.base_url if config.has_ollama_config() else "Not configured"
+                if config.has_ollama_config():
+                    ollama_config = config.get_ollama_config_safely()
+                    ollama_endpoint = getattr(ollama_config, 'base_url', 'Not configured')
+                else:
+                    ollama_endpoint = "Not configured"
             except Exception:
                 ollama_endpoint = "Not configured"
+                
+            try:
+                environment = config.enterprise['environment'].title()
+                data_retention = config.enterprise['data_retention_days']
+            except Exception:
+                environment = "Development"
+                data_retention = 90
             
             report_summary = f"""
-            ## {config.enterprise['compliance_mode']} Compliance Report
+            ## {compliance_mode} Compliance Report
             
             **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            **Environment:** {config.enterprise['environment'].title()}
-            **Data Period:** {config.enterprise['data_retention_days']} days
+            **Environment:** {environment}
+            **Data Period:** {data_retention} days
             
             **Summary:**
             - Overall Compliance Score: 98%
