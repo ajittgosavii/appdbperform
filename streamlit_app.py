@@ -631,20 +631,19 @@ class SecureAnalyticsEngine:
         self.config = config
         self.analysis_cache = {}
         
-        # FIXED: Always initialize remote_ai_enabled first
-        self.remote_ai_enabled = config.features.get("remote_ai_enabled", True)
-        
+        # FIXED: Initialize all attributes properly
+        self._remote_ai_enabled = config.features.get("remote_ai_enabled", True)
         self.ollama_client = None
         self.transformers_model = None
         self.ai_type = "statistical"  # Default fallback
         
         # Initialize AI capabilities
-        if self.remote_ai_enabled:
+        if self._remote_ai_enabled:
             self._initialize_remote_ai()
     
     def has_remote_ai_enabled(self) -> bool:
         """Safely check if remote AI is enabled"""
-        return getattr(self, 'remote_ai_enabled', False)
+        return getattr(self, '_remote_ai_enabled', False)
         
     def _initialize_remote_ai(self):
         """Initialize remote AI capabilities"""
@@ -689,7 +688,7 @@ class SecureAnalyticsEngine:
             
         except Exception as e:
             logger.warning(f"AI initialization failed: {e}")
-            # FIXED: Don't modify remote_ai_enabled here - keep original setting
+            # Keep original setting but fall back to statistical
             self.ai_type = "statistical"
     
     def analyze_performance_data(self, data: pd.DataFrame) -> Dict[str, str]:
@@ -2005,16 +2004,16 @@ def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureA
         
         if st.button("🚀 Run Advanced Analysis", key="advanced_analytics"):
             with st.spinner("🔒 Performing comprehensive analysis with Remote AI..."):
-                # Temporarily disable AI if user unchecked it
+                # Temporarily modify AI setting if user unchecked it
                 original_ai_setting = analytics_engine.has_remote_ai_enabled()
-                if hasattr(analytics_engine, 'remote_ai_enabled') and not ai_enhancement:
-                    analytics_engine.remote_ai_enabled = False
+                if hasattr(analytics_engine, '_remote_ai_enabled') and not ai_enhancement:
+                    analytics_engine._remote_ai_enabled = False
                 
                 analysis = analytics_engine.analyze_performance_data(data)
                 
                 # Restore original setting
-                if hasattr(analytics_engine, 'remote_ai_enabled'):
-                    analytics_engine.remote_ai_enabled = original_ai_setting
+                if hasattr(analytics_engine, '_remote_ai_enabled'):
+                    analytics_engine._remote_ai_enabled = original_ai_setting
                 
                 # Map analysis type to result key
                 analysis_map = {
