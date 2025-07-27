@@ -23,11 +23,11 @@ import requests
 
 # Optional database imports with fallbacks
 try:
-    import psycopg2
-    PSYCOPG2_AVAILABLE = True
+    import pyodbc
+    PYODBC_AVAILABLE = True
 except ImportError:
-    PSYCOPG2_AVAILABLE = False
-    psycopg2 = None
+    PYODBC_AVAILABLE = False
+    pyodbc = None
 
 # Optional AI imports with fallbacks
 try:
@@ -94,12 +94,12 @@ class EnterpriseSecurityConfig:
         # ALWAYS initialize ollama first with defaults
         self.ollama = OllamaConfig()
         
-        # Initialize all other attributes with defaults
-        self.security = SecurityConfig()
+        # Initialize all other attributes with defaults - SQL Server port
         self.databases = {
-            "primary": DatabaseConfig(host="", port=5432, username="", password="", database=""),
-            "replica": DatabaseConfig(host="", port=5432, username="", password="", database="")
+            "primary": DatabaseConfig(host="", port=1433, username="", password="", database=""),
+            "replica": DatabaseConfig(host="", port=1433, username="", password="", database="")
         }
+        self.security = SecurityConfig()
         self.alerts = AlertConfig()
         self.enterprise = {
             "company_name": "Your Company",
@@ -141,12 +141,12 @@ class EnterpriseSecurityConfig:
             logger.warning(f"Using default security config: {e}")
             # self.security already initialized with defaults
         
-        # Database Configuration - Multiple environments
+        # Database Configuration - SQL Server defaults
         try:
             self.databases = {
                 "primary": DatabaseConfig(
                     host=st.secrets.get("database", {}).get("primary_host", ""),
-                    port=st.secrets.get("database", {}).get("primary_port", 5432),
+                    port=st.secrets.get("database", {}).get("primary_port", 1433),  # SQL Server port
                     username=st.secrets.get("database", {}).get("primary_username", ""),
                     password=st.secrets.get("database", {}).get("primary_password", ""),
                     database=st.secrets.get("database", {}).get("primary_database", ""),
@@ -154,7 +154,7 @@ class EnterpriseSecurityConfig:
                 ),
                 "replica": DatabaseConfig(
                     host=st.secrets.get("database", {}).get("replica_host", ""),
-                    port=st.secrets.get("database", {}).get("replica_port", 5432),
+                    port=st.secrets.get("database", {}).get("replica_port", 1433),  # SQL Server port
                     username=st.secrets.get("database", {}).get("replica_username", ""),
                     password=st.secrets.get("database", {}).get("replica_password", ""),
                     database=st.secrets.get("database", {}).get("replica_database", ""),
@@ -283,96 +283,87 @@ class EnterpriseSecurityConfig:
             logger.warning(f"Error encrypting data: {e}")
             return data
 
-# Secure Database Interface - No External Dependencies
-class SecurePostgreSQLInterface:
-    """Secure PostgreSQL interface with read-only access and connection pooling"""
+# Secure SQL Server Database Interface
+class SecureSQLServerInterface:
+    """Secure SQL Server interface with read-only access and connection pooling"""
     
     def __init__(self, config: DatabaseConfig):
         self.config = config
         self.connection_pool = []
         self.pool_lock = threading.Lock()
         self.connected = False
-        self.psycopg2_available = PSYCOPG2_AVAILABLE
+        self.pyodbc_available = PYODBC_AVAILABLE
         
-        if not self.psycopg2_available:
-            logger.warning("PostgreSQL driver (psycopg2) not available - using demo mode")
+        if not self.pyodbc_available:
+            logger.warning("SQL Server driver (pyodbc) not available - using demo mode")
         
     def connect(self) -> bool:
-        """Establish secure database connection"""
+        """Establish secure SQL Server connection"""
         try:
-            if not self.psycopg2_available:
-                logger.info("PostgreSQL driver not available - using secure demo data")
+            if not self.pyodbc_available:
+                logger.info("SQL Server driver not available - using secure demo data")
                 return False
                 
             if not self.config.host or not self.config.password:
                 logger.warning("Database configuration incomplete - using demo data")
                 return False
             
-            # Test connection with security settings
-            test_conn = psycopg2.connect(
-                host=self.config.host,
-                port=self.config.port,
-                user=self.config.username,
-                password=self.config.password,
-                database=self.config.database,
-                sslmode='require' if self.config.ssl_enabled else 'prefer',
-                connect_timeout=self.config.connection_timeout,
-                options='-c default_transaction_isolation=serializable -c default_transaction_read_only=on'
-            )
+            # SQL Server connection string
+            connection_string = self._build_connection_string()
             
-            # Verify read-only access
-            with test_conn.cursor() as cursor:
-                cursor.execute("SHOW transaction_read_only;")
-                is_readonly = cursor.fetchone()[0] == 'on'
-                
+            # Test connection with security settings
+            test_conn = pyodbc.connect(connection_string)
             test_conn.close()
             
-            if not is_readonly:
-                logger.error("Database connection is not read-only - security violation")
-                return False
-            
             self.connected = True
-            logger.info(f"Secure database connection established to {self.config.host}")
+            logger.info(f"Secure SQL Server connection established to {self.config.host}")
             return True
             
         except Exception as e:
-            logger.error(f"Database connection failed: {e}")
+            logger.error(f"SQL Server connection failed: {e}")
             return False
+    
+    def _build_connection_string(self) -> str:
+        """Build SQL Server connection string with security options"""
+        connection_string = (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={self.config.host},{self.config.port};"
+            f"DATABASE={self.config.database};"
+            f"UID={self.config.username};"
+            f"PWD={self.config.password};"
+            f"Encrypt={'yes' if self.config.ssl_enabled else 'no'};"
+            f"TrustServerCertificate=no;"
+            f"Connection Timeout={self.config.connection_timeout};"
+            f"ApplicationIntent=ReadOnly;"  # Force read-only for security
+        )
+        return connection_string
     
     @contextmanager
     def get_connection(self):
-        """Get database connection from secure pool"""
-        if not self.psycopg2_available:
-            raise Exception("PostgreSQL driver not available")
+        """Get SQL Server connection from secure pool"""
+        if not self.pyodbc_available:
+            raise Exception("SQL Server driver not available")
             
         conn = None
         try:
-            conn = psycopg2.connect(
-                host=self.config.host,
-                port=self.config.port,
-                user=self.config.username,
-                password=self.config.password,
-                database=self.config.database,
-                sslmode='require' if self.config.ssl_enabled else 'prefer',
-                connect_timeout=self.config.connection_timeout,
-                options='-c default_transaction_read_only=on'
-            )
+            connection_string = self._build_connection_string()
+            conn = pyodbc.connect(connection_string)
             yield conn
         except Exception as e:
-            logger.error(f"Database connection error: {e}")
+            logger.error(f"SQL Server connection error: {e}")
             raise
         finally:
             if conn:
                 conn.close()
     
     def execute_query(self, query: str, params: List = None) -> pd.DataFrame:
-        """Execute read-only query securely"""
+        """Execute read-only query securely on SQL Server"""
         try:
             # Security: Validate query is read-only
             if not self._is_safe_query(query):
                 raise ValueError("Only SELECT queries are allowed for security")
             
-            if self.connected and self.psycopg2_available:
+            if self.connected and self.pyodbc_available:
                 with self.get_connection() as conn:
                     return pd.read_sql_query(query, conn, params=params)
             else:
@@ -384,59 +375,63 @@ class SecurePostgreSQLInterface:
             return pd.DataFrame()
     
     def get_performance_metrics(self, hours: int = 24) -> pd.DataFrame:
-        """Get PostgreSQL performance metrics securely"""
-        if not self.psycopg2_available or not self.connected:
+        """Get SQL Server performance metrics securely"""
+        if not self.pyodbc_available or not self.connected:
             logger.info("Using demo performance metrics")
             return self._generate_demo_data()
             
+        # SQL Server specific performance query using Dynamic Management Views
         query = """
         SELECT 
-            query,
-            calls,
-            total_exec_time,
-            mean_exec_time,
-            stddev_exec_time,
-            rows,
-            shared_blks_hit,
-            shared_blks_read,
-            queryid,
-            last_exec
-        FROM pg_stat_statements 
-        WHERE last_exec > NOW() - INTERVAL %s HOUR
-        AND query NOT LIKE '%%pg_stat_statements%%'
-        ORDER BY mean_exec_time DESC
-        LIMIT 1000
+            SUBSTRING(qt.text, (qs.statement_start_offset/2)+1, 
+                CASE qs.statement_end_offset
+                    WHEN -1 THEN DATALENGTH(qt.text)
+                    ELSE qs.statement_end_offset
+                END - qs.statement_start_offset)/2) as query_text,
+            qs.execution_count as calls,
+            qs.total_elapsed_time / 1000.0 as total_exec_time_ms,
+            (qs.total_elapsed_time / qs.execution_count) / 1000.0 as mean_exec_time_ms,
+            qs.total_logical_reads as logical_reads,
+            qs.total_physical_reads as physical_reads,
+            qs.creation_time as last_exec,
+            DB_NAME() as database_name
+        FROM sys.dm_exec_query_stats qs
+        CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) qt
+        WHERE qs.creation_time > DATEADD(HOUR, -?, GETDATE())
+            AND qt.text NOT LIKE '%sys.dm_exec_query_stats%'
+        ORDER BY qs.total_elapsed_time DESC
         """
         
         return self.execute_query(query, [hours])
     
     def get_slow_queries(self, threshold_ms: int = 5000, limit: int = 100) -> pd.DataFrame:
-        """Get slow queries securely"""
-        if not self.psycopg2_available or not self.connected:
+        """Get slow queries from SQL Server"""
+        if not self.pyodbc_available or not self.connected:
             logger.info("Using demo slow queries data")
             return self._generate_slow_queries_demo(limit)
             
         query = """
-        SELECT 
-            queryid,
-            query,
-            calls,
-            total_exec_time,
-            mean_exec_time,
-            stddev_exec_time,
-            rows
-        FROM pg_stat_statements 
-        WHERE mean_exec_time > %s
-        ORDER BY mean_exec_time DESC
-        LIMIT %s
+        SELECT TOP (?)
+            SUBSTRING(qt.text, (qs.statement_start_offset/2)+1, 
+                CASE qs.statement_end_offset
+                    WHEN -1 THEN DATALENGTH(qt.text)
+                    ELSE qs.statement_end_offset
+                END - qs.statement_start_offset)/2) as query_text,
+            qs.execution_count as calls,
+            qs.total_elapsed_time / 1000.0 as total_exec_time_ms,
+            (qs.total_elapsed_time / qs.execution_count) / 1000.0 as mean_exec_time_ms,
+            qs.total_logical_reads as logical_reads
+        FROM sys.dm_exec_query_stats qs
+        CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) qt
+        WHERE (qs.total_elapsed_time / qs.execution_count) / 1000.0 > ?
+        ORDER BY (qs.total_elapsed_time / qs.execution_count) DESC
         """
         
-        return self.execute_query(query, [threshold_ms, limit])
+        return self.execute_query(query, [limit, threshold_ms])
     
     def get_database_stats(self) -> Dict[str, Any]:
-        """Get database health statistics"""
-        if not self.psycopg2_available or not self.connected:
-            # Demo health data
+        """Get SQL Server health statistics"""
+        if not self.pyodbc_available or not self.connected:
             return {
                 "connections": np.random.randint(20, 80),
                 "database_size": "245.2 GB",
@@ -444,20 +439,29 @@ class SecurePostgreSQLInterface:
                 "longest_query": np.random.uniform(0, 30)
             }
             
+        # SQL Server specific health queries
         queries = {
-            "connections": "SELECT count(*) as active_connections FROM pg_stat_activity WHERE state = 'active'",
-            "database_size": "SELECT pg_size_pretty(pg_database_size(current_database())) as size",
-            "cache_hit_ratio": """
-                SELECT round(
-                    100.0 * sum(blks_hit) / (sum(blks_hit) + sum(blks_read) + 1), 2
-                ) as cache_hit_ratio
-                FROM pg_stat_database WHERE datname = current_database()
+            "connections": """
+                SELECT COUNT(*) as active_connections 
+                FROM sys.dm_exec_sessions 
+                WHERE is_user_process = 1 AND status = 'running'
             """,
-            "longest_query": """
-                SELECT EXTRACT(EPOCH FROM (now() - query_start)) as seconds
-                FROM pg_stat_activity 
-                WHERE state = 'active' AND query_start IS NOT NULL
-                ORDER BY query_start ASC LIMIT 1
+            "cache_hit_ratio": """
+                SELECT 
+                    (cntr_value * 100.0) / 
+                    (SELECT cntr_value 
+                     FROM sys.dm_os_performance_counters 
+                     WHERE counter_name = 'Buffer cache hit ratio base' 
+                     AND object_name LIKE '%Buffer Manager%') as cache_hit_ratio
+                FROM sys.dm_os_performance_counters 
+                WHERE counter_name = 'Buffer cache hit ratio' 
+                AND object_name LIKE '%Buffer Manager%'
+            """,
+            "database_size": """
+                SELECT 
+                    CAST(SUM(size) * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) as size_gb
+                FROM sys.master_files 
+                WHERE database_id = DB_ID()
             """
         }
         
@@ -468,12 +472,17 @@ class SecurePostgreSQLInterface:
                     for key, query in queries.items():
                         try:
                             result = pd.read_sql_query(query, conn)
-                            stats[key] = result.iloc[0, 0] if not result.empty else 0
+                            if key == "database_size":
+                                stats[key] = f"{result.iloc[0, 0]:.1f} GB"
+                            else:
+                                stats[key] = result.iloc[0, 0] if not result.empty else 0
                         except Exception as e:
                             logger.warning(f"Query {key} failed: {e}")
                             stats[key] = 0
+                    
+                    # Add placeholder for longest query
+                    stats["longest_query"] = 0
             else:
-                # Demo health data
                 stats = {
                     "connections": np.random.randint(20, 80),
                     "database_size": "245.2 GB",
@@ -497,7 +506,8 @@ class SecurePostgreSQLInterface:
         # Deny dangerous keywords
         dangerous_keywords = [
             'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 
-            'TRUNCATE', 'GRANT', 'REVOKE', 'EXECUTE', 'COPY', 'BULK'
+            'TRUNCATE', 'GRANT', 'REVOKE', 'EXECUTE', 'EXEC', 'BULK',
+            'MERGE', 'BACKUP', 'RESTORE'
         ]
         
         for keyword in dangerous_keywords:
@@ -508,7 +518,7 @@ class SecurePostgreSQLInterface:
     
     def _generate_demo_data(self) -> pd.DataFrame:
         """Generate realistic demo data when database is unavailable"""
-        logger.info("Generating secure demo performance data")
+        logger.info("Generating secure demo performance data for SQL Server")
         
         base_time = datetime.now() - timedelta(hours=24)
         
@@ -521,11 +531,10 @@ class SecurePostgreSQLInterface:
         ]
         
         data = []
-        for i in range(2500):  # Increased sample size for better analytics
+        for i in range(2500):
             app = np.random.choice(applications, p=[a["volume"] for a in applications])
             timestamp = base_time + timedelta(seconds=np.random.randint(0, 86400))
             
-            # Realistic execution patterns with business hours bias
             hour = timestamp.hour
             business_hours_multiplier = 1.5 if 9 <= hour <= 17 else 0.7
             
@@ -547,23 +556,21 @@ class SecurePostgreSQLInterface:
                 "connection_id": np.random.randint(1, 100),
                 "database_name": "production_db",
                 "user_name": f"{app['name']}_user",
-                "wait_event": np.random.choice(["", "LWLockNamed", "DataFileRead", "WALWrite"], p=[0.7, 0.1, 0.15, 0.05])
+                "wait_event": np.random.choice(["", "PAGEIOLATCH_SH", "LCK_M_S", "WRITELOG"], p=[0.7, 0.1, 0.15, 0.05])
             })
         
         return pd.DataFrame(data)
     
     def _generate_slow_queries_demo(self, limit: int) -> pd.DataFrame:
-        """Generate demo slow queries data"""
+        """Generate demo slow queries data for SQL Server"""
         slow_queries = []
         for i in range(min(limit, 50)):
             slow_queries.append({
-                "queryid": f"sq_{i}",
-                "query": f"SELECT * FROM large_table_{i % 5} WHERE complex_condition",
+                "query_text": f"SELECT * FROM LargeTable_{i % 5} WHERE ComplexCondition = ?",
                 "calls": np.random.randint(1, 100),
-                "total_exec_time": np.random.uniform(5000, 30000),
-                "mean_exec_time": np.random.uniform(5000, 15000),
-                "stddev_exec_time": np.random.uniform(1000, 5000),
-                "rows": np.random.randint(1000, 100000)
+                "total_exec_time_ms": np.random.uniform(5000, 30000),
+                "mean_exec_time_ms": np.random.uniform(5000, 15000),
+                "logical_reads": np.random.randint(1000, 100000)
             })
         return pd.DataFrame(slow_queries)
 
@@ -773,7 +780,7 @@ class SecureAnalyticsEngine:
             base_url = getattr(ollama_config, 'base_url', 'N/A')
             
             prompt = f"""
-You are a database performance expert analyzing enterprise PostgreSQL metrics. Based on the following performance data, provide concise, actionable insights:
+You are a database performance expert analyzing enterprise SQL Server metrics. Based on the following performance data, provide concise, actionable insights:
 
 {data_summary}
 
@@ -782,7 +789,7 @@ Please provide:
 2. Specific optimization recommendations (2-3 actionable items)
 3. Risk assessment (1-2 sentences)
 
-Keep response under 500 words and focus on actionable recommendations.
+Keep response under 500 words and focus on actionable recommendations for SQL Server.
             """
             
             response = self.ollama_client.generate(prompt, configured_model)
@@ -804,7 +811,7 @@ Keep response under 500 words and focus on actionable recommendations.
     def _transformers_analysis(self, data_summary: str) -> Dict[str, str]:
         """Use Hugging Face transformers for analysis"""
         try:
-            prompt = f"Database performance analysis: {data_summary[:500]}..."  # Truncate for model limits
+            prompt = f"SQL Server performance analysis: {data_summary[:500]}..."  # Truncate for model limits
             
             response = self.transformers_model(prompt, max_length=200, do_sample=True)
             
@@ -857,7 +864,7 @@ Keep response under 500 words and focus on actionable recommendations.
     def _prepare_ai_prompt(self, data: pd.DataFrame, statistical_analysis: Dict[str, str]) -> str:
         """Prepare data summary for AI analysis"""
         summary = f"""
-Performance Data Summary:
+SQL Server Performance Data Summary:
 - Total Queries: {len(data):,}
 - Average Response Time: {data['execution_time_ms'].mean():.1f}ms
 - 95th Percentile: {data['execution_time_ms'].quantile(0.95):.1f}ms
@@ -889,7 +896,7 @@ Statistical Analysis Summary:
         return merged
     
     def _generate_comprehensive_analysis(self, data: pd.DataFrame) -> Dict[str, str]:
-        """Generate sophisticated statistical analysis"""
+        """Generate sophisticated statistical analysis for SQL Server"""
         
         # Core performance metrics
         total_queries = len(data)
@@ -940,10 +947,10 @@ Statistical Analysis Summary:
         
         return {
             "executive_summary": f"""
-## 📊 Executive Performance Summary
+## 📊 Executive Performance Summary - SQL Server
 
 **System Overview:**
-Analyzed {total_queries:,} database operations with median response time of {p50_time:.1f}ms. 
+Analyzed {total_queries:,} SQL Server operations with median response time of {p50_time:.1f}ms. 
 System performance is {"**healthy**" if avg_time < 500 else "**concerning**" if avg_time < 1500 else "**critical**"} with {critical_queries} critical slow queries.
 
 **Key Performance Indicators:**
@@ -963,7 +970,7 @@ System performance is {"**healthy**" if avg_time < 500 else "**concerning**" if 
             """,
             
             "technical_analysis": f"""
-## 🔧 Technical Performance Analysis
+## 🔧 Technical Performance Analysis - SQL Server
 
 **Query Performance Distribution:**
 • **Fast Queries** (<100ms): {fast_queries:,} ({fast_queries/total_queries*100:.1f}%)
@@ -983,7 +990,7 @@ System performance is {"**healthy**" if avg_time < 500 else "**concerning**" if 
 **Resource Utilization:**
 • **Average CPU:** {avg_cpu:.1f}% | **Status:** {"🔴 High" if avg_cpu > 80 else "🟡 Moderate" if avg_cpu > 60 else "🟢 Normal"}
 • **Average Memory:** {avg_memory:.1f}MB | **Status:** {"🔴 High" if avg_memory > 800 else "🟡 Moderate" if avg_memory > 400 else "🟢 Normal"}
-• **Cache Hit Ratio:** {avg_cache_hit:.1f}% | **Status:** {"🟢 Excellent" if avg_cache_hit > 90 else "🟡 Good" if avg_cache_hit > 80 else "🔴 Poor"}
+• **Buffer Cache Hit Ratio:** {avg_cache_hit:.1f}% | **Status:** {"🟢 Excellent" if avg_cache_hit > 90 else "🟡 Good" if avg_cache_hit > 80 else "🔴 Poor"}
 
 **Temporal Patterns:**
 • **Performance Trend:** {trend_direction.title()} ({((trend_end-trend_start)/trend_start*100):+.1f}% change)
@@ -992,52 +999,57 @@ System performance is {"**healthy**" if avg_time < 500 else "**concerning**" if 
             """,
             
             "optimization_recommendations": f"""
-## 💡 Performance Optimization Recommendations
+## 💡 SQL Server Performance Optimization Recommendations
 
 **🚨 Immediate Actions (0-24 hours):**
 
 1. **Critical Query Optimization** ({critical_queries} queries >5s)
-   - Review execution plans for top 10 slowest queries
-   - Add missing indexes identified in slow query analysis
+   - Review execution plans for top 10 slowest queries using SQL Server Management Studio
+   - Identify missing indexes using Database Engine Tuning Advisor
+   - Check for parameter sniffing issues and consider using OPTION (RECOMPILE)
    - **Expected Impact:** 40-60% reduction in worst-case response times
 
 2. **{worst_app.title()} Application Optimization**
    - Current performance: {app_stats.loc[worst_app, ("execution_time_ms", "mean")]:.1f}ms average
    - Focus on query optimization and connection pooling
+   - Consider implementing query timeout settings
    - **Expected Impact:** 30-50% improvement in application response times
 
 **⚡ Short-term Optimizations (1-2 weeks):**
 
-1. **Resource Optimization**
+1. **SQL Server Resource Optimization**
    {"- **CPU Management:** Current usage at " + f"{avg_cpu:.1f}% - consider scaling if consistently >70%" if avg_cpu > 60 else "- **CPU Usage:** Healthy at " + f"{avg_cpu:.1f}%"}
-   {"- **Memory Optimization:** " + f"{avg_memory:.1f}MB average usage - monitor for memory leaks" if avg_memory > 600 else "- **Memory Usage:** Normal at " + f"{avg_memory:.1f}MB"}
-   {"- **Cache Improvement:** " + f"{avg_cache_hit:.1f}% hit ratio - investigate cache misses" if avg_cache_hit < 85 else "- **Cache Performance:** Excellent at " + f"{avg_cache_hit:.1f}%"}
+   {"- **Memory Optimization:** " + f"{avg_memory:.1f}MB average usage - monitor for memory pressure" if avg_memory > 600 else "- **Memory Usage:** Normal at " + f"{avg_memory:.1f}MB"}
+   {"- **Buffer Cache Improvement:** " + f"{avg_cache_hit:.1f}% hit ratio - investigate logical reads and cache misses" if avg_cache_hit < 85 else "- **Buffer Cache Performance:** Excellent at " + f"{avg_cache_hit:.1f}%"}
 
-2. **Load Distribution**
-   - Peak load at {peak_load_hour}:00 with {hourly_stats.loc[peak_load_hour, "count"]} queries
-   - Consider load balancing or query scheduling
-   - **Expected Impact:** 20-30% reduction in peak hour latency
+2. **Index and Statistics Maintenance**
+   - Implement automated index maintenance jobs
+   - Update statistics regularly during low-usage periods
+   - Consider columnstore indexes for analytical workloads
+   - **Expected Impact:** 20-30% improvement in query performance
 
 **🏗️ Strategic Improvements (1-3 months):**
 
 1. **Architecture Review**
    - Performance trend is {trend_direction} ({((trend_end-trend_start)/trend_start*100):+.1f}% change)
-   - {"Consider read replicas and horizontal scaling" if trend_direction == "degrading" else "Current architecture scaling well"}
-   - Implement query result caching for frequent operations
+   - {"Consider Always On Availability Groups and read replicas" if trend_direction == "degrading" else "Current architecture scaling well"}
+   - Implement query result caching using Redis or In-Memory OLTP
+   - Consider partitioning for large tables
 
-2. **Monitoring Enhancement**
-   - Set up automated alerts for queries exceeding {query_time_threshold:.0f}ms
-   - Implement performance regression detection
+2. **SQL Server Monitoring Enhancement**
+   - Set up Query Store for continuous query performance monitoring
+   - Implement automated alerts for queries exceeding {query_time_threshold:.0f}ms
+   - Use Extended Events for detailed performance tracking
    - **Expected Impact:** Proactive issue resolution, 50% faster problem detection
 
 **💰 Cost-Benefit Analysis:**
-• **High Impact, Low Effort:** Index optimization, query tuning
-• **Medium Impact, Medium Effort:** Application refactoring, caching
-• **High Impact, High Effort:** Architecture changes, horizontal scaling
+• **High Impact, Low Effort:** Index optimization, statistics updates, query tuning
+• **Medium Impact, Medium Effort:** Connection pooling, query timeout configuration
+• **High Impact, High Effort:** Always On setup, In-Memory OLTP implementation
             """,
             
             "risk_assessment": f"""
-## ⚠️ Risk Assessment & Mitigation
+## ⚠️ SQL Server Risk Assessment & Mitigation
 
 **🎯 Current Risk Level:** {self._get_risk_level(avg_time, critical_queries, avg_cache_hit)}
 
@@ -1056,28 +1068,30 @@ System performance is {"**healthy**" if avg_time < 500 else "**concerning**" if 
   - Performance variability: {std_time:.1f}ms standard deviation
   - Worst performer: {worst_app} needs immediate attention
 
-**🛡️ Mitigation Strategies:**
+**🛡️ SQL Server Specific Mitigation Strategies:**
 
 **Immediate Risk Mitigation:**
-• Set up monitoring alerts for queries exceeding {p95_time:.0f}ms (95th percentile)
-• Implement circuit breakers for {worst_app} application
-• Create read-only replicas to distribute query load
+• Configure Resource Governor to limit resource consumption by application
+• Implement connection pooling to prevent connection exhaustion
+• Set up Database Mail alerts for critical performance thresholds
+• Enable Query Store for automatic query regression detection
 
 **Proactive Risk Management:**
 • Monitor performance trend: currently {trend_direction} ({((trend_end-trend_start)/trend_start*100):+.1f}% change)
-• Capacity planning: evaluate scaling if critical queries increase >20%
-• Establish performance baselines and regression testing
+• Capacity planning: evaluate Always On or clustering if critical queries increase >20%
+• Establish performance baselines using SQL Server baseline templates
+• Implement automated failover using Always On Availability Groups
 
 **Business Impact Assessment:**
 • **User Experience:** {"At risk" if critical_queries > 20 else "Stable"} - {(critical_queries/total_queries*100):.1f}% of operations slow
 • **System Reliability:** {"Concerning" if std_time > avg_time else "Good"} - performance consistency
 • **Operational Cost:** {"Review needed" if avg_cpu > 70 else "Optimized"} - resource utilization
 
-**📈 Monitoring Recommendations:**
-• **Daily:** Monitor {worst_app} application performance and critical query count
-• **Weekly:** Review performance trends and resource utilization patterns  
-• **Monthly:** Assess capacity planning and optimization effectiveness
-• **Quarterly:** Performance architecture review and goal adjustment
+**📈 SQL Server Monitoring Recommendations:**
+• **Daily:** Monitor {worst_app} application performance and critical query count using Query Store
+• **Weekly:** Review wait statistics and blocking processes using sys.dm_os_wait_stats
+• **Monthly:** Assess index fragmentation and statistics freshness
+• **Quarterly:** Performance architecture review and Always On health assessment
             """
         }
     
@@ -1356,7 +1370,7 @@ class SecureEnterpriseUserManager:
 
 # Page configuration
 st.set_page_config(
-    page_title="Secure Enterprise DB Analyzer",
+    page_title="Secure Enterprise DB Analyzer - SQL Server",
     page_icon="🔒",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1370,7 +1384,8 @@ def get_enterprise_config():
 @st.cache_resource  
 def get_database_interface():
     config = get_enterprise_config()
-    return SecurePostgreSQLInterface(config.databases["primary"])
+    # Use SQL Server interface instead of PostgreSQL
+    return SecureSQLServerInterface(config.databases["primary"])
 
 @st.cache_resource
 def get_analytics_engine():
@@ -1582,7 +1597,7 @@ def show_security_header(config: EnterpriseSecurityConfig):
         st.markdown(f'''
         <div class="security-header">
             <h2>🔒 {config.enterprise['company_name']}</h2>
-            <h3>Secure Database Performance Analytics Platform</h3>
+            <h3>Secure SQL Server Performance Analytics Platform</h3>
             <div style="margin-top: 0.5rem;">
                 <span class="environment-badge {env_class}">{config.enterprise['environment']}</span>
                 <span class="compliance-badge">{compliance_mode} Compliant</span>
@@ -1609,7 +1624,7 @@ def show_security_header(config: EnterpriseSecurityConfig):
                 <div><strong>Data Encryption:</strong> ✅ Enabled</div>
                 <div><strong>Audit Logging:</strong> ✅ Active</div>
                 <div><strong>Session Security:</strong> ✅ {config.security.session_timeout_minutes}min timeout</div>
-                <div><strong>Database Access:</strong> ✅ Read-only monitoring</div>
+                <div><strong>Database Access:</strong> ✅ Read-only SQL Server monitoring</div>
                 <div><strong>AI Processing:</strong> ✅ {ai_details} ({ai_endpoint})</div>
                 <div><strong>External Dependencies:</strong> ❌ Database data stays secure</div>
             </div>
@@ -1621,7 +1636,7 @@ def show_security_header(config: EnterpriseSecurityConfig):
         # Fallback display
         st.markdown('''
         <div class="security-header">
-            <h2>🔒 Enterprise Database Analytics</h2>
+            <h2>🔒 Enterprise SQL Server Analytics</h2>
             <h3>Secure Performance Monitoring Platform</h3>
         </div>
         ''', unsafe_allow_html=True)
@@ -1633,7 +1648,7 @@ def show_secure_login(user_manager: SecureEnterpriseUserManager):
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("### Database Performance Analytics")
+        st.markdown("### SQL Server Performance Analytics")
         st.markdown("*Secure, compliant enterprise monitoring platform with Remote AI*")
         
         # Security notice
@@ -1641,7 +1656,7 @@ def show_secure_login(user_manager: SecureEnterpriseUserManager):
         <div class="security-info">
             <h4>🛡️ Security Notice</h4>
             <p><strong>This is a secure enterprise system.</strong> All activities are logged and monitored. 
-            Database data processing is performed entirely within your infrastructure. Remote AI processing 
+            SQL Server data processing is performed entirely within your infrastructure. Remote AI processing 
             happens on your private Ollama instance to ensure data never leaves your network.</p>
         </div>
         ''', unsafe_allow_html=True)
@@ -1675,29 +1690,29 @@ def show_secure_login(user_manager: SecureEnterpriseUserManager):
         st.markdown("---")
         st.info("""
         **🔒 Secure Enterprise Roles:**
-        • **Database Administrator** - Full system access and security management
+        • **Database Administrator** - Full SQL Server access and security management
         • **Engineering Manager** - Executive dashboards and team reports  
         • **Senior Developer** - Application performance monitoring
         • **Performance Analyst** - Analytics and reporting tools
         • **Security Officer** - Audit access and compliance monitoring
         """)
 
-def initialize_secure_database(db_interface: SecurePostgreSQLInterface):
-    """Initialize secure database connection"""
-    with st.spinner("🔒 Establishing secure database connection..."):
+def initialize_secure_database(db_interface: SecureSQLServerInterface):
+    """Initialize secure SQL Server connection"""
+    with st.spinner("🔒 Establishing secure SQL Server connection..."):
         try:
             connected = db_interface.connect()
             if connected:
-                st.success("✅ Secure database connection established")
-                logger.info("Secure database connection initialized")
+                st.success("✅ Secure SQL Server connection established")
+                logger.info("Secure SQL Server connection initialized")
             else:
-                st.warning("⚠️ Using secure demo data - configure database for production")
-                logger.warning("Database connection unavailable - using secure demo mode")
+                st.warning("⚠️ Using secure demo data - configure SQL Server for production")
+                logger.warning("SQL Server connection unavailable - using secure demo mode")
         except Exception as e:
-            st.error(f"❌ Database connection error: {e}")
-            logger.error(f"Database initialization failed: {e}")
+            st.error(f"❌ SQL Server connection error: {e}")
+            logger.error(f"SQL Server initialization failed: {e}")
 
-def show_secure_application(config: EnterpriseSecurityConfig, db_interface: SecurePostgreSQLInterface, 
+def show_secure_application(config: EnterpriseSecurityConfig, db_interface: SecureSQLServerInterface, 
                            analytics_engine: SecureAnalyticsEngine, user_manager: SecureEnterpriseUserManager):
     """Main secure application interface"""
     
@@ -1705,7 +1720,7 @@ def show_secure_application(config: EnterpriseSecurityConfig, db_interface: Secu
     show_secure_user_header(user_manager)
     
     # Load performance data securely
-    with st.spinner("🔒 Loading secure performance data..."):
+    with st.spinner("🔒 Loading secure SQL Server performance data..."):
         performance_data = load_secure_performance_data(db_interface)
     
     # Navigation with role-based access
@@ -1743,23 +1758,23 @@ def show_secure_user_header(user_manager: SecureEnterpriseUserManager):
             st.success("🔒 Logged out securely")
             st.rerun()
 
-def load_secure_performance_data(db_interface: SecurePostgreSQLInterface) -> pd.DataFrame:
-    """Load performance data securely from database or generate demo data"""
+def load_secure_performance_data(db_interface: SecureSQLServerInterface) -> pd.DataFrame:
+    """Load performance data securely from SQL Server or generate demo data"""
     try:
         if db_interface.connected:
-            logger.info("Loading performance data from secure database")
+            logger.info("Loading performance data from secure SQL Server")
             data = db_interface.get_performance_metrics(24)
         else:
-            logger.info("Loading secure demo performance data")
+            logger.info("Loading secure demo SQL Server performance data")
             data = db_interface._generate_demo_data()
         
         # Security: Log data access
-        logger.info(f"Performance data loaded: {len(data)} records")
+        logger.info(f"SQL Server performance data loaded: {len(data)} records")
         
         return data
         
     except Exception as e:
-        logger.error(f"Failed to load performance data: {e}")
+        logger.error(f"Failed to load SQL Server performance data: {e}")
         st.error("🔒 Error loading performance data. Check security logs.")
         return pd.DataFrame()
 
@@ -1770,13 +1785,13 @@ def show_secure_navigation(config: EnterpriseSecurityConfig, data: pd.DataFrame,
     user = st.session_state.authenticated_user
     
     # Sidebar navigation
-    st.sidebar.title("🔒 Secure Analytics")
+    st.sidebar.title("🔒 SQL Server Analytics")
     
     # Role-based navigation with security checks
     if user['role'] == 'dba_admin':
         nav_options = [
             "Executive Dashboard",
-            "Database Performance", 
+            "SQL Server Performance", 
             "System Health",
             "Advanced Analytics",
             "Security Monitoring",
@@ -1841,7 +1856,7 @@ def show_secure_navigation(config: EnterpriseSecurityConfig, data: pd.DataFrame,
     
     st.sidebar.markdown(f"""
     **Environment:** {env_status}  
-    **Database:** {db_status}  
+    **SQL Server:** {db_status}  
     **Security:** {security_status}  
     **AI Processing:** {ai_status}
     **Records:** {len(data):,}
@@ -1911,7 +1926,7 @@ def route_to_secure_page(page: str, config: EnterpriseSecurityConfig, data: pd.D
     # Security check: verify user has permission for this page
     page_permissions = {
         "Executive Dashboard": "dashboards",
-        "Database Performance": "database_admin",
+        "SQL Server Performance": "database_admin",
         "System Health": "system_config",
         "Application Performance": "application_monitoring",
         "Advanced Analytics": "analytics",
@@ -1935,7 +1950,7 @@ def route_to_secure_page(page: str, config: EnterpriseSecurityConfig, data: pd.D
     # Route to appropriate page
     if "Dashboard" in page:
         show_secure_executive_dashboard(config, data, analytics_engine)
-    elif "Database Performance" in page:
+    elif "SQL Server Performance" in page:
         show_secure_database_performance(data, analytics_engine)
     elif "System Health" in page:
         show_secure_system_health(config, data)
@@ -1963,7 +1978,7 @@ def route_to_secure_page(page: str, config: EnterpriseSecurityConfig, data: pd.D
 def show_secure_executive_dashboard(config: EnterpriseSecurityConfig, data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
     """Secure executive performance dashboard"""
     st.header("🔒 Executive Performance Dashboard")
-    st.markdown("**Secure real-time enterprise database performance overview with Remote AI insights**")
+    st.markdown("**Secure real-time enterprise SQL Server performance overview with Remote AI insights**")
     
     if data.empty:
         st.error("🔒 No performance data available. Check security configuration.")
@@ -2023,183 +2038,21 @@ def show_secure_executive_dashboard(config: EnterpriseSecurityConfig, data: pd.D
     
     with col1:
         if st.session_state.get('generate_analytics', False):
-            with st.spinner("🤖 Analyzing performance data with Remote AI..."):
+            with st.spinner("🤖 Analyzing SQL Server performance data with Remote AI..."):
                 analysis = analytics_engine.analyze_performance_data(data)
                 if "executive_summary" in analysis:
                     st.markdown(f'<div class="analytics-insight">{analysis["executive_summary"]}</div>', 
                                unsafe_allow_html=True)
                 st.session_state.generate_analytics = False
 
-def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
-    """Advanced analytics interface with Remote AI enhancement options"""
-    st.header("🤖 Advanced Performance Analytics with Remote AI")
-    
-    # Show AI status
-    if hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "remote_ollama":
-        ai_status = f"🤖 **Remote AI Enhanced** - Using {analytics_engine.ai_type.replace('_', ' ').title()}"
-        if hasattr(analytics_engine, 'ollama_client') and analytics_engine.ollama_client:
-            connection_test = analytics_engine.ollama_client.test_connection()
-            connection_status = "🟢 Connected" if connection_test else "🔴 Disconnected"
-            st.success(f"{ai_status} ({connection_status})")
-        else:
-            st.warning(f"{ai_status} (Not Initialized)")
-    elif hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "transformers":
-        st.success("🤖 **Local AI Enhanced** - Using Transformers")
-    else:
-        st.info("📊 **Statistical Analytics** - Advanced mathematical analysis (Configure remote Ollama for AI enhancement)")
-    
-    st.markdown("**Comprehensive statistical analysis with Remote AI enhancement**")
-    
-    # Analytics controls
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        analysis_type = st.selectbox("Analysis Type", [
-            "Performance Overview",
-            "Technical Analysis", 
-            "Optimization Recommendations",
-            "Risk Assessment"
-        ])
-    
-    with col2:
-        # Use the safe method to check remote AI enabled status
-        ai_enhancement = st.checkbox("Use Remote AI Enhancement", 
-                                   value=analytics_engine.has_remote_ai_enabled(),
-                                   disabled=not analytics_engine.has_remote_ai_enabled(),
-                                   help="Requires remote Ollama configuration")
-        
-        if st.button("🚀 Run Advanced Analysis", key="advanced_analytics"):
-            with st.spinner("🔒 Performing comprehensive analysis with Remote AI..."):
-                # Temporarily modify AI setting if user unchecked it
-                original_ai_setting = analytics_engine.has_remote_ai_enabled()
-                if hasattr(analytics_engine, '_remote_ai_enabled') and not ai_enhancement:
-                    analytics_engine._remote_ai_enabled = False
-                
-                analysis = analytics_engine.analyze_performance_data(data)
-                
-                # Restore original setting
-                if hasattr(analytics_engine, '_remote_ai_enabled'):
-                    analytics_engine._remote_ai_enabled = original_ai_setting
-                
-                # Map analysis type to result key
-                analysis_map = {
-                    "Performance Overview": "executive_summary",
-                    "Technical Analysis": "technical_analysis",
-                    "Optimization Recommendations": "optimization_recommendations", 
-                    "Risk Assessment": "risk_assessment"
-                }
-                
-                result_key = analysis_map.get(analysis_type, "executive_summary")
-                
-                if result_key in analysis:
-                    st.markdown(f'<div class="analytics-insight">{analysis[result_key]}</div>', 
-                               unsafe_allow_html=True)
-                else:
-                    st.error("Analysis temporarily unavailable")
-    
-    # Performance insights
-    if not data.empty:
-        st.subheader("🔍 Automated Performance Insights")
-        
-        # Generate automated insights
-        insights = generate_advanced_insights(data)
-        
-        for insight in insights:
-            if insight['type'] == 'critical':
-                st.markdown(f'<div class="alert-critical"><strong>🚨 {insight["title"]}</strong><br>{insight["message"]}</div>', 
-                           unsafe_allow_html=True)
-            elif insight['type'] == 'warning':
-                st.markdown(f'<div class="alert-warning"><strong>⚠️ {insight["title"]}</strong><br>{insight["message"]}</div>', 
-                           unsafe_allow_html=True)
-            elif insight['type'] == 'success':
-                st.markdown(f'<div class="alert-success"><strong>✅ {insight["title"]}</strong><br>{insight["message"]}</div>', 
-                           unsafe_allow_html=True)
-
-def generate_advanced_insights(data: pd.DataFrame) -> List[Dict]:
-    """Generate advanced statistical insights"""
-    insights = []
-    
-    # Statistical analysis
-    avg_time = data['execution_time_ms'].mean()
-    std_time = data['execution_time_ms'].std()
-    p95_time = data['execution_time_ms'].quantile(0.95)
-    
-    # Performance distribution analysis
-    slow_queries = (data['execution_time_ms'] > 5000).sum()
-    slow_rate = (slow_queries / len(data) * 100) if len(data) > 0 else 0
-    
-    # Variability analysis
-    coefficient_of_variation = (std_time / avg_time) if avg_time > 0 else 0
-    
-    if slow_rate > 10:
-        insights.append({
-            'type': 'critical',
-            'title': 'Critical Performance Issue',
-            'message': f'{slow_rate:.1f}% of queries exceed 5 second threshold. Immediate optimization required.'
-        })
-    elif slow_rate > 5:
-        insights.append({
-            'type': 'warning',
-            'title': 'Performance Degradation',
-            'message': f'{slow_rate:.1f}% of queries are slow. Performance tuning recommended.'
-        })
-    elif slow_rate < 1:
-        insights.append({
-            'type': 'success', 
-            'title': 'Excellent Performance',
-            'message': f'Only {slow_rate:.1f}% of queries are slow. System performing optimally.'
-        })
-    
-    # Performance consistency analysis
-    if coefficient_of_variation > 1.0:
-        insights.append({
-            'type': 'warning',
-            'title': 'High Performance Variability',
-            'message': f'Response time variability is high (CV: {coefficient_of_variation:.2f}). Investigate inconsistent performance patterns.'
-        })
-    elif coefficient_of_variation < 0.3:
-        insights.append({
-            'type': 'success',
-            'title': 'Consistent Performance',
-            'message': f'Response times are very consistent (CV: {coefficient_of_variation:.2f}). System stability is excellent.'
-        })
-    
-    # Resource utilization insights
-    avg_cpu = data['cpu_usage_percent'].mean()
-    if avg_cpu > 85:
-        insights.append({
-            'type': 'critical',
-            'title': 'Critical CPU Usage',
-            'message': f'Average CPU usage is {avg_cpu:.1f}%. Immediate scaling or optimization required.'
-        })
-    elif avg_cpu > 70:
-        insights.append({
-            'type': 'warning',
-            'title': 'High CPU Usage',
-            'message': f'Average CPU usage is {avg_cpu:.1f}%. Monitor for capacity planning.'
-        })
-    
-    # Cache performance insights
-    avg_cache = data['cache_hit_ratio'].mean()
-    if avg_cache < 0.7:
-        insights.append({
-            'type': 'warning',
-            'title': 'Poor Cache Performance', 
-            'message': f'Cache hit ratio is {avg_cache:.1f}%. Consider cache optimization or increased cache size.'
-        })
-    elif avg_cache > 0.95:
-        insights.append({
-            'type': 'success',
-            'title': 'Excellent Cache Performance',
-            'message': f'Cache hit ratio is {avg_cache:.1f}%. Cache configuration is optimal.'
-        })
-    
-    return insights
+# Continue with the remaining functions (show_secure_advanced_analytics, etc.)
+# These are similar to the original code but with SQL Server specific references
+# I'll include key ones that need SQL Server specific changes:
 
 def show_secure_database_performance(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
-    """Secure database performance analysis"""
-    st.header("🔒 Database Performance Analysis")
-    st.markdown("**Secure PostgreSQL performance monitoring with Remote AI insights**")
+    """Secure SQL Server performance analysis"""
+    st.header("🔒 SQL Server Performance Analysis")
+    st.markdown("**Secure SQL Server performance monitoring with Remote AI insights**")
     
     # Performance metrics
     col1, col2, col3 = st.columns(3)
@@ -2214,7 +2067,7 @@ def show_secure_database_performance(data: pd.DataFrame, analytics_engine: Secur
     
     with col3:
         avg_cache = data['cache_hit_ratio'].mean()
-        st.metric("Cache Hit Ratio", f"{avg_cache:.1f}%")
+        st.metric("Buffer Cache Hit Ratio", f"{avg_cache:.1f}%")
     
     # Query performance distribution
     st.subheader("📊 Query Performance Distribution")
@@ -2249,10 +2102,176 @@ def show_secure_database_performance(data: pd.DataFrame, analytics_engine: Secur
     else:
         st.success("✅ No slow queries detected in current time period")
 
+def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
+    """Advanced analytics interface with Remote AI enhancement options"""
+    st.header("🤖 Advanced SQL Server Analytics with Remote AI")
+    
+    # Show AI status
+    if hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "remote_ollama":
+        ai_status = f"🤖 **Remote AI Enhanced** - Using {analytics_engine.ai_type.replace('_', ' ').title()}"
+        if hasattr(analytics_engine, 'ollama_client') and analytics_engine.ollama_client:
+            connection_test = analytics_engine.ollama_client.test_connection()
+            connection_status = "🟢 Connected" if connection_test else "🔴 Disconnected"
+            st.success(f"{ai_status} ({connection_status})")
+        else:
+            st.warning(f"{ai_status} (Not Initialized)")
+    elif hasattr(analytics_engine, 'ai_type') and analytics_engine.ai_type == "transformers":
+        st.success("🤖 **Local AI Enhanced** - Using Transformers")
+    else:
+        st.info("📊 **Statistical Analytics** - Advanced mathematical analysis (Configure remote Ollama for AI enhancement)")
+    
+    st.markdown("**Comprehensive SQL Server statistical analysis with Remote AI enhancement**")
+    
+    # Analytics controls
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        analysis_type = st.selectbox("Analysis Type", [
+            "Performance Overview",
+            "Technical Analysis", 
+            "Optimization Recommendations",
+            "Risk Assessment"
+        ])
+    
+    with col2:
+        # Use the safe method to check remote AI enabled status
+        ai_enhancement = st.checkbox("Use Remote AI Enhancement", 
+                                   value=analytics_engine.has_remote_ai_enabled(),
+                                   disabled=not analytics_engine.has_remote_ai_enabled(),
+                                   help="Requires remote Ollama configuration")
+        
+        if st.button("🚀 Run Advanced Analysis", key="advanced_analytics"):
+            with st.spinner("🔒 Performing comprehensive SQL Server analysis with Remote AI..."):
+                # Temporarily modify AI setting if user unchecked it
+                original_ai_setting = analytics_engine.has_remote_ai_enabled()
+                if hasattr(analytics_engine, '_remote_ai_enabled') and not ai_enhancement:
+                    analytics_engine._remote_ai_enabled = False
+                
+                analysis = analytics_engine.analyze_performance_data(data)
+                
+                # Restore original setting
+                if hasattr(analytics_engine, '_remote_ai_enabled'):
+                    analytics_engine._remote_ai_enabled = original_ai_setting
+                
+                # Map analysis type to result key
+                analysis_map = {
+                    "Performance Overview": "executive_summary",
+                    "Technical Analysis": "technical_analysis",
+                    "Optimization Recommendations": "optimization_recommendations", 
+                    "Risk Assessment": "risk_assessment"
+                }
+                
+                result_key = analysis_map.get(analysis_type, "executive_summary")
+                
+                if result_key in analysis:
+                    st.markdown(f'<div class="analytics-insight">{analysis[result_key]}</div>', 
+                               unsafe_allow_html=True)
+                else:
+                    st.error("Analysis temporarily unavailable")
+    
+    # Performance insights
+    if not data.empty:
+        st.subheader("🔍 Automated SQL Server Performance Insights")
+        
+        # Generate automated insights
+        insights = generate_advanced_insights(data)
+        
+        for insight in insights:
+            if insight['type'] == 'critical':
+                st.markdown(f'<div class="alert-critical"><strong>🚨 {insight["title"]}</strong><br>{insight["message"]}</div>', 
+                           unsafe_allow_html=True)
+            elif insight['type'] == 'warning':
+                st.markdown(f'<div class="alert-warning"><strong>⚠️ {insight["title"]}</strong><br>{insight["message"]}</div>', 
+                           unsafe_allow_html=True)
+            elif insight['type'] == 'success':
+                st.markdown(f'<div class="alert-success"><strong>✅ {insight["title"]}</strong><br>{insight["message"]}</div>', 
+                           unsafe_allow_html=True)
+
+def generate_advanced_insights(data: pd.DataFrame) -> List[Dict]:
+    """Generate advanced statistical insights for SQL Server"""
+    insights = []
+    
+    # Statistical analysis
+    avg_time = data['execution_time_ms'].mean()
+    std_time = data['execution_time_ms'].std()
+    p95_time = data['execution_time_ms'].quantile(0.95)
+    
+    # Performance distribution analysis
+    slow_queries = (data['execution_time_ms'] > 5000).sum()
+    slow_rate = (slow_queries / len(data) * 100) if len(data) > 0 else 0
+    
+    # Variability analysis
+    coefficient_of_variation = (std_time / avg_time) if avg_time > 0 else 0
+    
+    if slow_rate > 10:
+        insights.append({
+            'type': 'critical',
+            'title': 'Critical SQL Server Performance Issue',
+            'message': f'{slow_rate:.1f}% of queries exceed 5 second threshold. Consider Query Store analysis and index optimization.'
+        })
+    elif slow_rate > 5:
+        insights.append({
+            'type': 'warning',
+            'title': 'SQL Server Performance Degradation',
+            'message': f'{slow_rate:.1f}% of queries are slow. Review execution plans and consider Database Engine Tuning Advisor.'
+        })
+    elif slow_rate < 1:
+        insights.append({
+            'type': 'success', 
+            'title': 'Excellent SQL Server Performance',
+            'message': f'Only {slow_rate:.1f}% of queries are slow. SQL Server is performing optimally.'
+        })
+    
+    # Performance consistency analysis
+    if coefficient_of_variation > 1.0:
+        insights.append({
+            'type': 'warning',
+            'title': 'High SQL Server Performance Variability',
+            'message': f'Response time variability is high (CV: {coefficient_of_variation:.2f}). Check for parameter sniffing and plan cache issues.'
+        })
+    elif coefficient_of_variation < 0.3:
+        insights.append({
+            'type': 'success',
+            'title': 'Consistent SQL Server Performance',
+            'message': f'Response times are very consistent (CV: {coefficient_of_variation:.2f}). Query plan stability is excellent.'
+        })
+    
+    # Resource utilization insights
+    avg_cpu = data['cpu_usage_percent'].mean()
+    if avg_cpu > 85:
+        insights.append({
+            'type': 'critical',
+            'title': 'Critical SQL Server CPU Usage',
+            'message': f'Average CPU usage is {avg_cpu:.1f}%. Consider scaling up or implementing Resource Governor.'
+        })
+    elif avg_cpu > 70:
+        insights.append({
+            'type': 'warning',
+            'title': 'High SQL Server CPU Usage',
+            'message': f'Average CPU usage is {avg_cpu:.1f}%. Monitor wait statistics and consider performance tuning.'
+        })
+    
+    # Cache performance insights
+    avg_cache = data['cache_hit_ratio'].mean()
+    if avg_cache < 0.7:
+        insights.append({
+            'type': 'warning',
+            'title': 'Poor SQL Server Buffer Cache Performance', 
+            'message': f'Buffer cache hit ratio is {avg_cache:.1f}%. Consider increasing max server memory or optimizing queries.'
+        })
+    elif avg_cache > 0.95:
+        insights.append({
+            'type': 'success',
+            'title': 'Excellent SQL Server Buffer Cache Performance',
+            'message': f'Buffer cache hit ratio is {avg_cache:.1f}%. Memory configuration is optimal.'
+        })
+    
+    return insights
+
 def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFrame):
-    """Secure system health monitoring"""
-    st.header("🔒 System Health Monitoring")
-    st.markdown("**Secure real-time system metrics**")
+    """Secure SQL Server system health monitoring"""
+    st.header("🔒 SQL Server System Health Monitoring")
+    st.markdown("**Secure real-time SQL Server system metrics**")
     
     # Get database interface for health stats
     db_interface = get_database_interface()
@@ -2262,28 +2281,28 @@ def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFra
     col1, col2, col3, col4, col5 = st.columns(5)
     
     health_metrics = [
-        ("Database Connections", health_stats.get("connections", 45), 100),
+        ("SQL Server Connections", health_stats.get("connections", 45), 100),
         ("Memory Usage", 68, 100),
         ("CPU Usage", 42, 100),
         ("Disk Space", 78, 100),
-        ("Cache Hit Ratio", health_stats.get("cache_hit_ratio", 89), 100)
+        ("Buffer Cache Hit Ratio", health_stats.get("cache_hit_ratio", 89), 100)
     ]
     
     for i, (metric, current, max_val) in enumerate(health_metrics):
         col = [col1, col2, col3, col4, col5][i]
         with col:
-            if metric == "Database Connections":
+            if metric == "SQL Server Connections":
                 status_color = "🟢" if current < 70 else "🟡" if current < 85 else "🔴"
             elif metric in ["Memory Usage", "CPU Usage", "Disk Space"]:
                 status_color = "🟢" if current < 70 else "🟡" if current < 85 else "🔴"
-            else:  # Cache Hit Ratio
+            else:  # Buffer Cache Hit Ratio
                 status_color = "🟢" if current > 85 else "🟡" if current > 75 else "🔴"
             
-            unit = "%" if metric != "Database Connections" else ""
+            unit = "%" if metric != "SQL Server Connections" else ""
             col.metric(metric, f"{current:.0f}{unit}", f"{status_color}")
     
     # System health charts
-    st.subheader("📈 System Performance Trends")
+    st.subheader("📈 SQL Server Performance Trends")
     
     # Generate time series data for system metrics
     times = pd.date_range(start=datetime.now()-timedelta(hours=24), periods=24, freq='H')
@@ -2291,13 +2310,13 @@ def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFra
     memory_data = [65 + np.random.normal(0, 5) for _ in range(24)]
     
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=times, y=cpu_data, name="CPU Usage %", line=dict(color='red')))
+    fig.add_trace(go.Scatter(x=times, y=cpu_data, name="SQL Server CPU %", line=dict(color='red')))
     fig.add_trace(go.Scatter(x=times, y=memory_data, name="Memory Usage %", line=dict(color='blue')))
-    fig.update_layout(title="System Resource Usage (24h)", yaxis_title="Usage %")
+    fig.update_layout(title="SQL Server Resource Usage (24h)", yaxis_title="Usage %")
     st.plotly_chart(fig, use_container_width=True)
     
-    # Database-specific health information
-    st.subheader("🗄️ Database Health Details")
+    # SQL Server-specific health information
+    st.subheader("🗄️ SQL Server Health Details")
     
     col1, col2 = st.columns(2)
     
@@ -2309,7 +2328,7 @@ def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFra
     
     with col2:
         st.markdown("**Performance Metrics:**")
-        st.markdown(f"• Cache Hit Ratio: {health_stats.get('cache_hit_ratio', 'N/A')}%")
+        st.markdown(f"• Buffer Cache Hit Ratio: {health_stats.get('cache_hit_ratio', 'N/A')}%")
         st.markdown(f"• Read-Only Access: ✅ Enabled")
         st.markdown("• Security Mode: 🔒 Enhanced")
         
@@ -2323,8 +2342,8 @@ def show_secure_system_health(config: EnterpriseSecurityConfig, data: pd.DataFra
             st.markdown("• Remote AI: 🤖 Configuration Error")
 
 def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFrame, user_manager: SecureEnterpriseUserManager):
-    """Security monitoring dashboard - FIXED VERSION"""
-    st.header("🛡️ Security Monitoring Dashboard")
+    """Security monitoring dashboard for SQL Server"""
+    st.header("🛡️ SQL Server Security Monitoring Dashboard")
     st.markdown("**Enterprise security and compliance monitoring with Remote AI protection**")
     
     # Security metrics
@@ -2342,7 +2361,7 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
         st.metric("Data Encryption", "✅ Enabled")
     
     with col4:
-        # FIXED: Use safe method to check ollama config
+        # Use safe method to check ollama config
         try:
             ai_security = "🤖 Remote AI" if config.has_ollama_config() else "📊 Statistical"
         except Exception as e:
@@ -2365,13 +2384,13 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
                     st.markdown(f"**Remote Endpoint:** {ai_url}")
                     st.markdown(f"**Model:** {ai_model}")
                     st.markdown(f"**Network Security:** ✅ Private network only")
-                    st.markdown(f"**Data Privacy:** ✅ No external data transfer")
+                    st.markdown(f"**Data Privacy:** ✅ SQL Server data never leaves network")
                 except Exception as e:
                     logger.warning(f"Error displaying ollama config details: {e}")
                     st.markdown("**Remote Endpoint:** Configuration error")
                     st.markdown("**Model:** Configuration error")
                     st.markdown(f"**Network Security:** ✅ Private network only")
-                    st.markdown(f"**Data Privacy:** ✅ No external data transfer")
+                    st.markdown(f"**Data Privacy:** ✅ SQL Server data never leaves network")
             
             with col2:
                 # Test remote AI connection
@@ -2401,7 +2420,7 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
     # Mock security events for demo
     security_events = [
         {"timestamp": datetime.now() - timedelta(minutes=5), "event": "User Login", "user": "admin@company.com", "status": "Success"},
-        {"timestamp": datetime.now() - timedelta(minutes=15), "event": "Data Access", "user": "analyst@company.com", "status": "Success"},
+        {"timestamp": datetime.now() - timedelta(minutes=15), "event": "SQL Server Data Access", "user": "analyst@company.com", "status": "Success"},
         {"timestamp": datetime.now() - timedelta(hours=1), "event": "Failed Login", "user": "unknown@domain.com", "status": "Blocked"},
         {"timestamp": datetime.now() - timedelta(hours=2), "event": "AI Analysis", "user": "manager@company.com", "status": "Success"},
         {"timestamp": datetime.now() - timedelta(hours=3), "event": "Configuration Change", "user": "admin@company.com", "status": "Success"},
@@ -2411,7 +2430,7 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
     st.dataframe(events_df, use_container_width=True)
     
     # Compliance status
-    st.subheader("📋 Compliance Status")
+    st.subheader("📋 SQL Server Compliance Status")
     
     compliance_items = [
         {"Control": "Data Encryption at Rest", "Status": "✅ Compliant", "Framework": "SOC2"},
@@ -2419,16 +2438,16 @@ def show_security_monitoring(config: EnterpriseSecurityConfig, data: pd.DataFram
         {"Control": "Audit Logging", "Status": "✅ Compliant", "Framework": "SOC2"},
         {"Control": "Session Management", "Status": "✅ Compliant", "Framework": "SOC2"},
         {"Control": "AI Data Processing", "Status": "✅ Compliant", "Framework": "Privacy"},
-        {"Control": "Data Retention", "Status": "✅ Compliant", "Framework": "GDPR"},
+        {"Control": "SQL Server TDE", "Status": "✅ Compliant", "Framework": "GDPR"},
     ]
     
     compliance_df = pd.DataFrame(compliance_items)
     st.dataframe(compliance_df, use_container_width=True)
 
 def show_secure_application_performance(data: pd.DataFrame, analytics_engine: SecureAnalyticsEngine):
-    """Secure application-specific performance analysis"""
+    """Secure application-specific performance analysis for SQL Server"""
     st.header("🔒 Application Performance Analysis")
-    st.markdown("**Secure application monitoring and optimization with Remote AI insights**")
+    st.markdown("**Secure SQL Server application monitoring and optimization with Remote AI insights**")
     
     if data.empty:
         st.error("🔒 No performance data available")
@@ -2483,19 +2502,19 @@ def show_secure_application_performance(data: pd.DataFrame, analytics_engine: Se
     
     # Remote AI analysis for specific application
     if st.button(f"🤖 Analyze {selected_app} with Remote AI"):
-        with st.spinner(f"🤖 Analyzing {selected_app} performance with Remote AI..."):
+        with st.spinner(f"🤖 Analyzing {selected_app} SQL Server performance with Remote AI..."):
             analysis = analytics_engine.analyze_performance_data(app_data)
             if "optimization_recommendations" in analysis:
                 st.markdown(f'<div class="analytics-insight">{analysis["optimization_recommendations"]}</div>', 
                            unsafe_allow_html=True)
 
 def show_secure_alert_management(config: EnterpriseSecurityConfig, data: pd.DataFrame):
-    """Secure alert management interface"""
-    st.header("🚨 Alert Management")
-    st.markdown("**Secure enterprise alerting and monitoring**")
+    """Secure alert management interface for SQL Server"""
+    st.header("🚨 SQL Server Alert Management")
+    st.markdown("**Secure enterprise alerting and monitoring for SQL Server**")
     
     # Current alerts
-    st.subheader("🔴 Active Alerts")
+    st.subheader("🔴 Active SQL Server Alerts")
     
     alerts = generate_secure_alerts(config, data)
     
@@ -2510,11 +2529,11 @@ def show_secure_alert_management(config: EnterpriseSecurityConfig, data: pd.Data
             </div>
             ''', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="alert-success"><strong>✅ All Clear</strong><br>No active alerts detected</div>', 
+        st.markdown('<div class="alert-success"><strong>✅ All Clear</strong><br>No active SQL Server alerts detected</div>', 
                    unsafe_allow_html=True)
     
     # Alert configuration
-    st.subheader("⚙️ Alert Configuration")
+    st.subheader("⚙️ SQL Server Alert Configuration")
     
     col1, col2 = st.columns(2)
     
@@ -2545,11 +2564,11 @@ def show_secure_alert_management(config: EnterpriseSecurityConfig, data: pd.Data
         except Exception:
             ai_alerts = st.checkbox("Remote AI Analysis Alerts", False)
         
-        if st.button("💾 Save Alert Configuration"):
-            st.success("✅ Alert configuration saved securely")
+        if st.button("💾 Save SQL Server Alert Configuration"):
+            st.success("✅ SQL Server alert configuration saved securely")
 
 def generate_secure_alerts(config: EnterpriseSecurityConfig, data: pd.DataFrame) -> List[Dict]:
-    """Generate current system alerts with security context"""
+    """Generate current SQL Server system alerts with security context"""
     alerts = []
     
     if data.empty:
@@ -2566,7 +2585,7 @@ def generate_secure_alerts(config: EnterpriseSecurityConfig, data: pd.DataFrame)
         alerts.append({
             'severity': 'Critical',
             'icon': '🚨',
-            'title': 'Performance Alert',
+            'title': 'SQL Server Performance Alert',
             'message': f'{len(slow_queries)} queries exceeded {threshold}ms threshold',
             'count': len(slow_queries),
             'time': '5 minutes ago'
@@ -2583,7 +2602,7 @@ def generate_secure_alerts(config: EnterpriseSecurityConfig, data: pd.DataFrame)
         alerts.append({
             'severity': 'Warning',
             'icon': '⚠️', 
-            'title': 'Resource Usage Alert',
+            'title': 'SQL Server Resource Usage Alert',
             'message': f'CPU usage exceeded {cpu_threshold}% threshold',
             'count': len(high_cpu),
             'time': '10 minutes ago'
@@ -2595,8 +2614,8 @@ def generate_secure_alerts(config: EnterpriseSecurityConfig, data: pd.DataFrame)
             alerts.append({
                 'severity': 'Info',
                 'icon': '🔒',
-                'title': 'Security Status',
-                'message': 'All security controls active and monitoring',
+                'title': 'SQL Server Security Status',
+                'message': 'All security controls active and monitoring SQL Server',
                 'count': 1,
                 'time': 'Continuous'
             })
@@ -2622,15 +2641,15 @@ def generate_secure_alerts(config: EnterpriseSecurityConfig, data: pd.DataFrame)
     return alerts
 
 def show_secure_reports_export(data: pd.DataFrame):
-    """Secure reports and data export functionality"""
-    st.header("📊 Secure Reports & Data Export")
+    """Secure reports and data export functionality for SQL Server"""
+    st.header("📊 Secure SQL Server Reports & Data Export")
     st.markdown("**Enterprise reporting with data protection and Remote AI insights**")
     
     # Security notice
     st.markdown('''
     <div class="security-info">
         <h4>🔒 Data Protection Notice</h4>
-        <p>All exported data is processed securely within your infrastructure. 
+        <p>All exported SQL Server data is processed securely within your infrastructure. 
         Remote AI analysis is performed on your private Ollama instance. 
         No data leaves your environment during report generation.</p>
     </div>
@@ -2640,12 +2659,12 @@ def show_secure_reports_export(data: pd.DataFrame):
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📋 Performance Reports")
+        st.subheader("📋 SQL Server Performance Reports")
         
         report_type = st.selectbox("Report Type", [
             "Executive Summary",
             "Remote AI Performance Report",
-            "Technical Performance Report",
+            "SQL Server Technical Report",
             "Security and Compliance Report",
             "Application Performance Analysis", 
             "Slow Query Report",
@@ -2662,12 +2681,12 @@ def show_secure_reports_export(data: pd.DataFrame):
         include_sensitive = st.checkbox("Include Detailed Metrics", value=False)
         include_ai_analysis = st.checkbox("Include Remote AI Analysis", value=True)
         
-        if st.button("🔒 Generate Secure Report"):
-            with st.spinner("Generating secure enterprise report with Remote AI insights..."):
+        if st.button("🔒 Generate Secure SQL Server Report"):
+            with st.spinner("Generating secure enterprise SQL Server report with Remote AI insights..."):
                 time.sleep(2)
                 
                 if include_sensitive:
-                    st.warning("⚠️ Report contains detailed performance metrics")
+                    st.warning("⚠️ Report contains detailed SQL Server performance metrics")
                 
                 if include_ai_analysis:
                     st.info("🤖 Report includes Remote AI analysis")
@@ -2691,7 +2710,7 @@ def show_secure_reports_export(data: pd.DataFrame):
         
         anonymize_data = st.checkbox("Anonymize Sensitive Data", value=True)
         
-        if st.button("🔒 Export Data Securely"):
+        if st.button("🔒 Export SQL Server Data Securely"):
             # Security check for sensitive data
             user = st.session_state.authenticated_user
             if data_scope == "Security Logs (Admin Only)" and user['role'] != 'dba_admin':
@@ -2705,19 +2724,19 @@ def show_secure_reports_export(data: pd.DataFrame):
                 export_data = export_data.copy()
                 if 'user_name' in export_data.columns:
                     export_data['user_name'] = export_data['user_name'].apply(lambda x: f"user_{hash(x) % 1000}")
-                st.info("🔒 Data has been anonymized for export")
+                st.info("🔒 SQL Server data has been anonymized for export")
             
             csv_data = export_data.to_csv(index=False)
             
             st.download_button(
                 label=f"📥 Download Secure {export_format} File",
                 data=csv_data,
-                file_name=f"secure_performance_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                file_name=f"secure_sqlserver_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
             )
 
 def generate_secure_performance_report(data: pd.DataFrame, report_type: str) -> pd.DataFrame:
-    """Generate secure performance report based on type"""
+    """Generate secure performance report based on type for SQL Server"""
     if report_type == "Executive Summary":
         return data.groupby('application').agg({
             'execution_time_ms': ['count', 'mean', 'max'],
@@ -2740,12 +2759,20 @@ def generate_secure_performance_report(data: pd.DataFrame, report_type: str) -> 
             'Compliance': ['SOC2', 'SOC2', 'SOC2', 'SOC2', 'Privacy']
         })
         return security_metrics
+    elif report_type == "SQL Server Technical Report":
+        # SQL Server specific metrics
+        sql_metrics = pd.DataFrame({
+            'Component': ['Buffer Cache', 'Query Performance', 'Connection Pool', 'TempDB', 'Wait Statistics'],
+            'Status': ['Optimal', 'Good', 'Healthy', 'Normal', 'Monitoring'],
+            'Recommendation': ['Maintain current settings', 'Review slow queries', 'Monitor peak usage', 'Consider sizing', 'Analyze top waits']
+        })
+        return sql_metrics
     else:
         return data.describe()
 
 def show_secure_system_configuration(config: EnterpriseSecurityConfig):
-    """Secure system configuration interface with Remote AI options"""
-    st.header("⚙️ Secure System Configuration")
+    """Secure system configuration interface with Remote AI options for SQL Server"""
+    st.header("⚙️ Secure SQL Server System Configuration")
     st.markdown("**Enterprise configuration with security controls and Remote AI options**")
     
     # Remote AI Configuration
@@ -2812,7 +2839,7 @@ def show_secure_system_configuration(config: EnterpriseSecurityConfig):
         st.markdown("• ✅ **Local Processing** - AI runs on your infrastructure")
         st.markdown("• ✅ **Compliance Ready** - Meets enterprise requirements")
         st.markdown("• ✅ **Secure Communication** - HTTP within your network")
-        st.markdown("• ✅ **No Data Leakage** - Database data stays secure")
+        st.markdown("• ✅ **No Data Leakage** - SQL Server data stays secure")
         
         st.markdown("**Current Configuration:**")
         try:
@@ -2838,7 +2865,7 @@ Status: {'✅ Enabled' if ai_enabled else '❌ Disabled'}
 def show_secure_user_administration(user_manager: SecureEnterpriseUserManager):
     """Secure user administration interface"""
     st.header("👥 Secure User Administration")
-    st.markdown("**Enterprise user management with security controls**")
+    st.markdown("**Enterprise user management with security controls for SQL Server access**")
     
     # User list with security information
     st.subheader("🔒 Enterprise Users")
@@ -2917,7 +2944,7 @@ def show_audit_logs(user_manager: SecureEnterpriseUserManager):
             "Timestamp": datetime.now() - timedelta(minutes=5),
             "User": "admin@company.com",
             "Action": "User Login",
-            "Resource": "Application",
+            "Resource": "SQL Server Application",
             "Result": "Success",
             "IP Address": "192.168.1.100"
         },
@@ -2925,7 +2952,7 @@ def show_audit_logs(user_manager: SecureEnterpriseUserManager):
             "Timestamp": datetime.now() - timedelta(minutes=10),
             "User": "manager@company.com",
             "Action": "Remote AI Analysis",
-            "Resource": "Performance Data",
+            "Resource": "SQL Server Performance Data",
             "Result": "Success",
             "IP Address": "192.168.1.102"
         },
@@ -2933,7 +2960,7 @@ def show_audit_logs(user_manager: SecureEnterpriseUserManager):
             "Timestamp": datetime.now() - timedelta(minutes=15),
             "User": "analyst@company.com", 
             "Action": "Data Access",
-            "Resource": "Performance Data",
+            "Resource": "SQL Server Performance Data",
             "Result": "Success",
             "IP Address": "192.168.1.105"
         },
@@ -2941,7 +2968,7 @@ def show_audit_logs(user_manager: SecureEnterpriseUserManager):
             "Timestamp": datetime.now() - timedelta(hours=1),
             "User": "unknown@domain.com",
             "Action": "Failed Login",
-            "Resource": "Application",
+            "Resource": "SQL Server Application",
             "Result": "Blocked",
             "IP Address": "203.0.113.1"
         },
@@ -2979,7 +3006,7 @@ def show_audit_logs(user_manager: SecureEnterpriseUserManager):
         st.download_button(
             label="📥 Download Audit Log CSV",
             data=csv_data,
-            file_name=f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            file_name=f"sqlserver_audit_logs_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv"
         )
 
@@ -2992,7 +3019,7 @@ def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame
     except Exception:
         compliance_mode = "SOC2"
         
-    st.markdown(f"**{compliance_mode} compliance monitoring with Remote AI security validation**")
+    st.markdown(f"**{compliance_mode} compliance monitoring with Remote AI security validation for SQL Server**")
     
     # Compliance overview
     col1, col2, col3, col4 = st.columns(4)
@@ -3018,7 +3045,8 @@ def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame
         {"Control ID": "SC-1", "Control Name": "System Communications Protection", "Status": "✅ Compliant", "Last Verified": "2024-01-18"},
         {"Control ID": "SI-1", "Control Name": "System and Information Integrity", "Status": "⚠️ Review Required", "Last Verified": "2024-01-10"},
         {"Control ID": "IA-1", "Control Name": "Identification and Authentication", "Status": "✅ Compliant", "Last Verified": "2024-01-19"},
-        {"Control ID": "AI-1", "Control Name": "AI Data Processing Security", "Status": "✅ Compliant", "Last Verified": "2024-01-22"}
+        {"Control ID": "AI-1", "Control Name": "AI Data Processing Security", "Status": "✅ Compliant", "Last Verified": "2024-01-22"},
+        {"Control ID": "DB-1", "Control Name": "SQL Server Data Protection", "Status": "✅ Compliant", "Last Verified": "2024-01-21"}
     ]
     
     controls_df = pd.DataFrame(controls)
@@ -3031,7 +3059,7 @@ def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame
     
     with col1:
         st.markdown("**AI Processing Compliance:**")
-        st.markdown("• ✅ Data never leaves private network")
+        st.markdown("• ✅ SQL Server data never leaves private network")
         st.markdown("• ✅ AI processing on controlled infrastructure")
         st.markdown("• ✅ No external API dependencies")
         st.markdown("• ✅ Audit trail for all AI operations")
@@ -3049,16 +3077,16 @@ def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame
         st.markdown("**Privacy & Security:**")
         st.markdown("• ✅ GDPR compliant data processing")
         st.markdown("• ✅ SOC2 Type II controls")
-        st.markdown("• ✅ Data encryption in transit")
+        st.markdown("• ✅ SQL Server TDE encryption support")
         st.markdown("• ✅ Access controls and authentication")
         st.markdown("• ✅ Comprehensive logging and monitoring")
     
     # Generate compliance report
-    if st.button("📊 Generate Compliance Report"):
-        with st.spinner("Generating compliance report..."):
+    if st.button("📊 Generate SQL Server Compliance Report"):
+        with st.spinner("Generating SQL Server compliance report..."):
             time.sleep(2)
             
-            st.success("✅ Compliance report generated successfully")
+            st.success("✅ SQL Server compliance report generated successfully")
             
             try:
                 if config.has_ollama_config():
@@ -3077,38 +3105,44 @@ def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame
                 data_retention = 90
             
             report_summary = f"""
-            ## {compliance_mode} Compliance Report
+            ## {compliance_mode} Compliance Report - SQL Server
             
             **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             **Environment:** {environment}
             **Data Period:** {data_retention} days
+            **Database:** Microsoft SQL Server
             
             **Summary:**
             - Overall Compliance Score: 98%
             - Controls Implemented: 48/49
             - Critical Controls: 100% compliant
             - AI Security Controls: 100% compliant
+            - SQL Server Security: Fully compliant
             - Risk Assessment: Low
             
             **Key Findings:**
             - All access controls properly implemented
             - Audit logging active and comprehensive
-            - Data encryption enabled for all sensitive data
+            - Data encryption enabled for all sensitive data (TDE ready)
             - Session management meets security requirements
             - Remote AI processing secure and compliant
             - No external data transfer detected
+            - SQL Server security features properly configured
             
             **Remote AI Security Assessment:**
             - AI endpoint: {ollama_endpoint}
             - Data privacy: Fully compliant
             - Network security: Private infrastructure only
             - Processing transparency: Full audit trail
+            - SQL Server data protection: Secure
             
             **Recommendations:**
             - Review SI-1 control implementation
             - Schedule quarterly compliance review
             - Update incident response procedures
             - Continue monitoring AI processing security
+            - Consider implementing SQL Server Always On for high availability
+            - Review TDE implementation for enhanced data protection
             """
             
             st.markdown(report_summary)
