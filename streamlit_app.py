@@ -20,6 +20,14 @@ from contextlib import contextmanager
 import threading
 import secrets
 import requests
+import pymssql
+import sqlalchemy
+from sqlalchemy import create_engine, text
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 # Optional database imports with fallbacks
 try:
@@ -86,6 +94,259 @@ class OllamaConfig:
     timeout: int = 30
     max_tokens: int = 1000
     temperature: float = 0.7
+
+class CloudCompatibleSQLServerInterface:
+    """SQL Server interface optimized for Streamlit Cloud deployment"""
+    
+    def __init__(self, config: DatabaseConfig):
+        self.config = config
+        self.connected = False
+        self.engine = None
+        self.connection_method = None
+        
+    def connect(self) -> bool:
+        """Try multiple connection methods for cloud compatibility"""
+        
+        # Method 1: Try pymssql (most cloud-friendly)
+        if self._try_pymssql_connection():
+            self.connection_method = "pymssql"
+            return True
+            
+        # Method 2: Try SQLAlchemy with pymssql
+        if self._try_sqlalchemy_connection():
+            self.connection_method = "sqlalchemy"
+            return True
+            
+        # Fallback: Use demo data
+        logger.warning("All SQL Server connection methods failed - using demo data")
+        self.connection_method = "demo"
+        return False
+    
+    def _try_pymssql_connection(self) -> bool:
+        """Try direct pymssql connection"""
+        try:
+            if not all([self.config.host, self.config.database, self.config.password]):
+                return False
+                
+            # Test connection
+            conn = pymssql.connect(
+                server=self.config.host,
+                port=self.config.port,
+                user=self.config.username,
+                password=self.config.password,
+                database=self.config.database,
+                timeout=30,
+                login_timeout=30,
+                charset='UTF-8',
+                as_dict=True
+            )
+            
+            # Test a simple query
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 as test")
+            cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            self.connected = True
+            logger.info(f"pymssql connection successful to {self.config.host}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"pymssql connection failed: {e}")
+            return False
+    
+    def _try_sqlalchemy_connection(self) -> bool:
+        """Try SQLAlchemy with pymssql driver"""
+        try:
+            if not all([self.config.host, self.config.database, self.config.password]):
+                return False
+                
+            # Build connection URL for SQLAlchemy
+            connection_url = (
+                f"mssql+pymssql://{self.config.username}:{self.config.password}"
+                f"@{self.config.host}:{self.config.port}/{self.config.database}"
+            )
+            
+            # Create engine
+            self.engine = create_engine(
+                connection_url,
+                pool_timeout=30,
+                pool_recycle=3600,
+                echo=False  # Set to True for debugging
+            )
+            
+            # Test connection
+            with self.engine.connect() as conn:
+                result = conn.execute(text("SELECT 1 as test"))
+                result.fetchone()
+            
+            self.connected = True
+            logger.info(f"SQLAlchemy connection successful to {self.config.host}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"SQLAlchemy connection failed: {e}")
+            return False
+    
+    def execute_query(self, query: str, params: list = None) -> pd.DataFrame:
+        """Execute query using available connection method"""
+        try:
+            if not self._is_safe_query(query):
+                raise ValueError("Only SELECT queries allowed for security")
+                
+            if self.connection_method == "pymssql":
+                return self._execute_pymssql_query(query, params)
+            elif self.connection_method == "sqlalchemy":
+                return self._execute_sqlalchemy_query(query, params)
+            else:
+                # Fallback to demo data
+                logger.info("Using demo data - no database connection")
+                return self._generate_demo_data()
+                
+        except Exception as e:
+            logger.error(f"Query execution failed: {e}")
+            return pd.DataFrame()
+    
+    def _execute_pymssql_query(self, query: str, params: list = None) -> pd.DataFrame:
+        """Execute query using pymssql"""
+        try:
+            conn = pymssql.connect(
+                server=self.config.host,
+                port=self.config.port,
+                user=self.config.username,
+                password=self.config.password,
+                database=self.config.database,
+                timeout=30,
+                as_dict=True
+            )
+            
+            # Use pandas to execute and return DataFrame
+            df = pd.read_sql_query(query, conn, params=params)
+            conn.close()
+            return df
+            
+        except Exception as e:
+            logger.error(f"pymssql query failed: {e}")
+            return pd.DataFrame()
+    
+    def _execute_sqlalchemy_query(self, query: str, params: list = None) -> pd.DataFrame:
+        """Execute query using SQLAlchemy"""
+        try:
+            with self.engine.connect() as conn:
+                df = pd.read_sql_query(text(query), conn, params=params)
+            return df
+            
+        except Exception as e:
+            logger.error(f"SQLAlchemy query failed: {e}")
+            return pd.DataFrame()
+    
+    def get_performance_metrics(self, hours: int = 24) -> pd.DataFrame:
+        """Get SQL Server performance metrics - cloud optimized"""
+        if not self.connected:
+            return self._generate_demo_data()
+            
+        # Simplified query that works across SQL Server versions
+        query = """
+        SELECT TOP 1000
+            qs.creation_time as timestamp,
+            'sql_server' as application,
+            NEWID() as query_id,
+            qs.total_elapsed_time / 1000.0 as execution_time_ms,
+            CASE 
+                WHEN qs.total_elapsed_time > 0 
+                THEN (qs.total_worker_time * 100.0) / qs.total_elapsed_time 
+                ELSE 0 
+            END as cpu_usage_percent,
+            qs.total_logical_reads / NULLIF(qs.execution_count, 0) * 8 / 1024.0 as memory_usage_mb,
+            CASE 
+                WHEN qs.total_physical_reads + qs.total_logical_reads > 0
+                THEN (qs.total_logical_reads - qs.total_physical_reads) * 100.0 / 
+                     (qs.total_logical_reads + qs.total_physical_reads)
+                ELSE 90.0 
+            END as cache_hit_ratio,
+            qs.execution_count as calls,
+            DB_NAME() as database_name
+        FROM sys.dm_exec_query_stats qs
+        WHERE qs.creation_time > DATEADD(HOUR, -?, GETDATE())
+        ORDER BY qs.total_elapsed_time DESC
+        """
+        
+        return self.execute_query(query, [hours])
+    
+    def _is_safe_query(self, query: str) -> bool:
+        """Enhanced query safety check"""
+        query_upper = query.upper().strip()
+        
+        # Must start with SELECT
+        if not query_upper.startswith('SELECT'):
+            return False
+        
+        # Check for dangerous patterns
+        dangerous_patterns = [
+            'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
+            'TRUNCATE', 'MERGE', 'BULK', 'BACKUP', 'RESTORE',
+            'EXEC', 'EXECUTE', 'SP_', 'XP_', ';--', '/*', '*/'
+        ]
+        
+        for pattern in dangerous_patterns:
+            if pattern in query_upper:
+                return False
+        
+        return True
+    
+    def _generate_demo_data(self) -> pd.DataFrame:
+        """Generate realistic demo data for development/demo"""
+        logger.info("Generating cloud-compatible demo data")
+        
+        # Your existing demo data generation logic here
+        # (keeping it the same as your original implementation)
+        base_time = datetime.now() - timedelta(hours=24)
+        
+        applications = [
+            {"name": "web_api", "base_time": 150, "variance": 50, "volume": 0.5},
+            {"name": "mobile_api", "base_time": 200, "variance": 80, "volume": 0.25},
+            {"name": "batch_processor", "base_time": 2000, "variance": 500, "volume": 0.15},
+            {"name": "analytics_engine", "base_time": 5000, "variance": 2000, "volume": 0.1}
+        ]
+        
+        data = []
+        for i in range(2500):
+            app = np.random.choice(applications, p=[a["volume"] for a in applications])
+            timestamp = base_time + timedelta(seconds=np.random.randint(0, 86400))
+            
+            hour = timestamp.hour
+            business_hours_multiplier = 1.5 if 9 <= hour <= 17 else 0.7
+            
+            exec_time = max(10, np.random.normal(
+                app["base_time"] * business_hours_multiplier, 
+                app["variance"]
+            ))
+            
+            data.append({
+                "timestamp": timestamp,
+                "application": app["name"],
+                "query_id": f"q_{i % 150}",
+                "execution_time_ms": exec_time,
+                "cpu_usage_percent": min(100, max(0, exec_time / 40 + np.random.normal(0, 15))),
+                "memory_usage_mb": max(10, np.random.normal(300, 150)),
+                "rows_examined": max(1, int(np.random.exponential(2000))),
+                "rows_returned": max(1, int(np.random.exponential(200))),
+                "cache_hit_ratio": np.random.uniform(0.65, 0.98),
+                "connection_id": np.random.randint(1, 100),
+                "database_name": "production_db",
+                "user_name": f"{app['name']}_user",
+                "wait_event": np.random.choice(["", "PAGEIOLATCH_SH", "LCK_M_S", "WRITELOG"], p=[0.7, 0.1, 0.15, 0.05])
+            })
+        
+        return pd.DataFrame(data)
+
+# Updated configuration factory
+@st.cache_resource
+def get_cloud_database_interface():
+    """Get cloud-compatible database interface"""
+    config = get_enterprise_config()
+    return CloudCompatibleSQLServerInterface(config.databases["primary"])
 
 class EnterpriseSecurityConfig:
     """Secure enterprise configuration management with remote Ollama support"""
@@ -1384,8 +1645,7 @@ def get_enterprise_config():
 @st.cache_resource  
 def get_database_interface():
     config = get_enterprise_config()
-    # Use SQL Server interface instead of PostgreSQL
-    return SecureSQLServerInterface(config.databases["primary"])
+    return CloudCompatibleSQLServerInterface(config.databases["primary"])
 
 @st.cache_resource
 def get_analytics_engine():
