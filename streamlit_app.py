@@ -143,7 +143,409 @@ class EnterpriseSecurityConfig:
         
         # Remote Ollama Configuration - Always initialize with defaults
         try:
-            ollama_config = st.secrets.get("ollama", {})
+            ollama_config = config.get_ollama_config_safely()
+            ai_url = getattr(ollama_config, 'base_url', 'N/A')
+            st.markdown(f"• AI Security: ✅ Private Network ({ai_url})")
+        except Exception:
+            st.markdown("• AI Security: ✅ Private Network (Not configured)")
+    
+    with col2:
+        st.markdown("**Database Security:**")
+        st.markdown("• Connection Mode: 🔒 Read-Only")
+        st.markdown("• SSL/TLS: ✅ Required")
+        st.markdown("• Connection Pooling: ✅ Secured")
+        st.markdown("• Query Validation: ✅ Active")
+        st.markdown("• AI Data Access: 🔒 Processed securely")
+    
+    # Database configuration
+    st.subheader("🗄️ Database Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        db_host = config.databases["primary"].host or "Not configured"
+        st.text_input("Primary Database Host", value=db_host if db_host != "Not configured" else "", disabled=True)
+        st.number_input("Connection Pool Size", value=config.databases["primary"].pool_size, disabled=True)
+        st.checkbox("SSL Required", value=config.databases["primary"].ssl_enabled, disabled=True)
+    
+    with col2:
+        st.selectbox("Environment", ["development", "staging", "production"], 
+                    index=["development", "staging", "production"].index(config.enterprise["environment"]),
+                    disabled=True)
+        st.text_input("Compliance Framework", value=config.enterprise["compliance_mode"], disabled=True)
+        st.number_input("Data Retention (days)", value=config.enterprise["data_retention_days"], disabled=True)
+    
+    # Feature configuration
+    st.subheader("🚀 Feature Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Analytics Features:**")
+        for feature, enabled in config.features.items():
+            if feature not in ["remote_ai_enabled", "ai_model_type"]:  # Skip AI features (shown above)
+                status = "✅" if enabled else "❌"
+                feature_name = feature.replace("_", " ").title()
+                st.markdown(f"• {feature_name}: {status}")
+    
+    with col2:
+        st.markdown("**Security Features:**")
+        st.markdown("• Advanced Analytics: ✅ Statistical + Remote AI")
+        st.markdown("• Data Encryption: ✅ At Rest & In Transit")
+        st.markdown("• Access Logging: ✅ Comprehensive")
+        st.markdown("• Remote AI: ✅ Private Network Only")
+        st.markdown("• External APIs: ❌ None")
+        st.markdown("• Data Privacy: ✅ Your Infrastructure")
+    
+    # Configuration save (demo)
+    if st.button("💾 Save Configuration"):
+        st.success("🔒 Configuration saved successfully")
+        if remote_ai_enabled != config.features.get("remote_ai_enabled", False):
+            st.info("🔄 Remote AI configuration changes require application restart to take effect")
+    
+    st.info("🔒 **Security Note:** Configuration changes require administrator privileges and security approval.")
+    
+    # Remote AI Setup Guide
+    with st.expander("📖 Remote Ollama Setup Guide"):
+        st.markdown(f"""
+        ### 🤖 Setting Up Remote Ollama
+        
+        **Your Current Configuration:**""")
+        
+        try:
+            ollama_config = config.get_ollama_config_safely()
+            endpoint = getattr(ollama_config, 'base_url', 'Not configured')
+            model = getattr(ollama_config, 'model', 'Not configured')
+            timeout = getattr(ollama_config, 'timeout', 30)
+            
+            st.markdown(f"""
+        - **Endpoint:** {endpoint}
+        - **Model:** {model}
+        - **Timeout:** {timeout}s""")
+        except Exception as e:
+            logger.warning(f"Error displaying ollama config in setup guide: {e}")
+            st.markdown("""
+        - **Endpoint:** Not configured
+        - **Model:** Not configured  
+        - **Timeout:** 30s""")
+        
+        st.markdown("""
+        **Setup Instructions:**
+        
+        **1. Install Ollama on your EC2 instance:**
+        ```bash
+        # On your EC2 instance (18.188.211.214)
+        curl -fsSL https://ollama.ai/install.sh | sh
+        
+        # Start Ollama service
+        ollama serve --host 0.0.0.0:11434
+        ```
+        
+        **2. Pull your preferred models:**
+        ```bash
+        # Choose one or more models
+        ollama pull llama2          # 7B model, good performance
+        ollama pull mistral         # Alternative model
+        ollama pull codellama       # Code-focused model
+        ollama pull llama2:13b      # Larger model for better analysis
+        ```
+        
+        **3. Configure Streamlit Secrets:**
+        ```toml
+        [ollama]
+        base_url = "http://18.188.211.214:11434"
+        model = "llama2"
+        timeout = 30
+        max_tokens = 1000
+        temperature = 0.7
+        
+        [ai]
+        remote_ai_enabled = true
+        model_type = "remote_ollama"
+        ```
+        
+        **4. Network Security:**
+        - Ensure port 11434 is open in your security group
+        - Configure firewall to allow connections from your application servers
+        - Consider using VPN or private networking for additional security
+        
+        **Security Benefits:**
+        - All AI processing happens on YOUR EC2 instance
+        - Database data never leaves your infrastructure
+        - Complete control over AI models and processing
+        - Meets enterprise compliance requirements
+        - No dependency on external AI services
+        
+        **Troubleshooting:**
+        - Check if Ollama service is running: `systemctl status ollama`
+        - Verify network connectivity: `curl http://18.188.211.214:11434/api/tags`
+        - Check available models: `ollama list`
+        - Monitor logs: `journalctl -u ollama -f`
+        """)
+
+def show_secure_user_administration(user_manager: SecureEnterpriseUserManager):
+    """Secure user administration interface"""
+    st.header("👥 Secure User Administration")
+    st.markdown("**Enterprise user management with security controls**")
+    
+    # User list with security information
+    st.subheader("🔒 Enterprise Users")
+    
+    users_df = pd.DataFrame([
+        {
+            "Email": email,
+            "Name": user["name"], 
+            "Role": user["role"],
+            "Department": user["department"],
+            "Security Clearance": user.get("security_clearance", "standard").upper(),
+            "MFA": "✅" if user.get("mfa_enabled", False) else "❌",
+            "Last Login": user["last_login"].strftime("%Y-%m-%d %H:%M"),
+            "Permissions": len(user["permissions"])
+        }
+        for email, user in user_manager.users.items()
+    ])
+    
+    st.dataframe(users_df, use_container_width=True)
+    
+    # Active sessions
+    st.subheader("🔐 Active Sessions")
+    
+    if user_manager.active_sessions:
+        sessions_data = []
+        for session_id, session in user_manager.active_sessions.items():
+            sessions_data.append({
+                "Session ID": session_id[:16] + "...",
+                "User": session["user_email"],
+                "Login Time": session["login_time"].strftime("%Y-%m-%d %H:%M"),
+                "Last Activity": session["last_activity"].strftime("%Y-%m-%d %H:%M"),
+                "IP Address": session["ip_address"]
+            })
+        
+        sessions_df = pd.DataFrame(sessions_data)
+        st.dataframe(sessions_df, use_container_width=True)
+    else:
+        st.info("No active sessions")
+    
+    # User management
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("➕ Add New User")
+        new_email = st.text_input("Email Address")
+        new_name = st.text_input("Full Name")
+        new_role = st.selectbox("Role", ["dba_admin", "engineering_manager", "developer", "analyst", "security_officer"])
+        security_clearance = st.selectbox("Security Clearance", ["low", "medium", "high"])
+        mfa_required = st.checkbox("Require MFA")
+        
+        if st.button("🔒 Add Secure User"):
+            st.success(f"User {new_email} added successfully with {security_clearance} clearance")
+    
+    with col2:
+        st.subheader("🔍 Role Permissions")
+        selected_role = st.selectbox("View Role Permissions", ["dba_admin", "engineering_manager", "developer", "analyst", "security_officer"])
+        
+        # Show permissions for selected role
+        sample_user = next((user for user in user_manager.users.values() if user["role"] == selected_role), None)
+        if sample_user:
+            st.write("**Permissions:**")
+            for perm in sample_user["permissions"]:
+                st.write(f"• {perm.replace('_', ' ').title()}")
+            
+            st.write(f"**Security Clearance:** {sample_user.get('security_clearance', 'standard').upper()}")
+            st.write(f"**MFA Required:** {'Yes' if sample_user.get('mfa_enabled', False) else 'No'}")
+
+def show_audit_logs(user_manager: SecureEnterpriseUserManager):
+    """Show audit logs for security compliance"""
+    st.header("📋 Audit Logs")
+    st.markdown("**Security and compliance audit trail with Remote AI activity monitoring**")
+    
+    # Mock audit log data for demo
+    audit_events = [
+        {
+            "Timestamp": datetime.now() - timedelta(minutes=5),
+            "User": "admin@company.com",
+            "Action": "User Login",
+            "Resource": "Application",
+            "Result": "Success",
+            "IP Address": "192.168.1.100"
+        },
+        {
+            "Timestamp": datetime.now() - timedelta(minutes=10),
+            "User": "manager@company.com",
+            "Action": "Remote AI Analysis",
+            "Resource": "Performance Data",
+            "Result": "Success",
+            "IP Address": "192.168.1.102"
+        },
+        {
+            "Timestamp": datetime.now() - timedelta(minutes=15),
+            "User": "analyst@company.com", 
+            "Action": "Data Access",
+            "Resource": "Performance Data",
+            "Result": "Success",
+            "IP Address": "192.168.1.105"
+        },
+        {
+            "Timestamp": datetime.now() - timedelta(hours=1),
+            "User": "unknown@domain.com",
+            "Action": "Failed Login",
+            "Resource": "Application",
+            "Result": "Blocked",
+            "IP Address": "203.0.113.1"
+        },
+        {
+            "Timestamp": datetime.now() - timedelta(hours=2),
+            "User": "admin@company.com",
+            "Action": "Configuration Change",
+            "Resource": "Remote AI Settings",
+            "Result": "Success", 
+            "IP Address": "192.168.1.100"
+        }
+    ]
+    
+    audit_df = pd.DataFrame(audit_events)
+    audit_df["Timestamp"] = audit_df["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    
+    st.dataframe(audit_df, use_container_width=True)
+    
+    # Audit log filters
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        log_level = st.selectbox("Filter by Result", ["All", "Success", "Failed", "Blocked"])
+    
+    with col2:
+        time_range = st.selectbox("Time Range", ["Last Hour", "Last 24 Hours", "Last 7 Days"])
+    
+    with col3:
+        if st.button("🔍 Filter Logs"):
+            st.info(f"Filtering logs: {log_level} events in {time_range}")
+    
+    # Export audit logs
+    if st.button("📥 Export Audit Logs"):
+        csv_data = audit_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Audit Log CSV",
+            data=csv_data,
+            file_name=f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv"
+        )
+
+def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame):
+    """Show compliance reports for regulatory requirements"""
+    st.header("📋 Compliance Reports")
+    st.markdown(f"**{config.enterprise['compliance_mode']} compliance monitoring with Remote AI security validation**")
+    
+    # Compliance overview
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Compliance Score", "98%", "+2%")
+    
+    with col2:
+        st.metric("Controls Passed", "48/49", "+1")
+    
+    with col3:
+        st.metric("Last Audit", "2024-01-15")
+    
+    with col4:
+        st.metric("Risk Level", "Low", "🟢")
+    
+    # Compliance controls
+    st.subheader("🛡️ Control Status")
+    
+    controls = [
+        {"Control ID": "AC-1", "Control Name": "Access Control Policy", "Status": "✅ Compliant", "Last Verified": "2024-01-20"},
+        {"Control ID": "AU-1", "Control Name": "Audit and Accountability", "Status": "✅ Compliant", "Last Verified": "2024-01-20"},
+        {"Control ID": "SC-1", "Control Name": "System Communications Protection", "Status": "✅ Compliant", "Last Verified": "2024-01-18"},
+        {"Control ID": "SI-1", "Control Name": "System and Information Integrity", "Status": "⚠️ Review Required", "Last Verified": "2024-01-10"},
+        {"Control ID": "IA-1", "Control Name": "Identification and Authentication", "Status": "✅ Compliant", "Last Verified": "2024-01-19"},
+        {"Control ID": "AI-1", "Control Name": "AI Data Processing Security", "Status": "✅ Compliant", "Last Verified": "2024-01-22"}
+    ]
+    
+    controls_df = pd.DataFrame(controls)
+    st.dataframe(controls_df, use_container_width=True)
+    
+    # Remote AI compliance section
+    st.subheader("🤖 Remote AI Compliance Status")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**AI Processing Compliance:**")
+        st.markdown("• ✅ Data never leaves private network")
+        st.markdown("• ✅ AI processing on controlled infrastructure")
+        st.markdown("• ✅ No external API dependencies")
+        st.markdown("• ✅ Audit trail for all AI operations")
+        try:
+            if config.has_ollama_config():
+                ollama_config = config.get_ollama_config_safely()
+                ai_endpoint = getattr(ollama_config, 'base_url', 'Not configured')
+                st.markdown(f"• ✅ Secure endpoint: {ai_endpoint}")
+            else:
+                st.markdown("• ✅ Secure endpoint: Configuration pending")
+        except Exception:
+            st.markdown("• ✅ Secure endpoint: Configuration pending")
+    
+    with col2:
+        st.markdown("**Privacy & Security:**")
+        st.markdown("• ✅ GDPR compliant data processing")
+        st.markdown("• ✅ SOC2 Type II controls")
+        st.markdown("• ✅ Data encryption in transit")
+        st.markdown("• ✅ Access controls and authentication")
+        st.markdown("• ✅ Comprehensive logging and monitoring")
+    
+    # Generate compliance report
+    if st.button("📊 Generate Compliance Report"):
+        with st.spinner("Generating compliance report..."):
+            time.sleep(2)
+            
+            st.success("✅ Compliance report generated successfully")
+            
+            try:
+                ollama_endpoint = config.ollama.base_url if config.has_ollama_config() else "Not configured"
+            except Exception:
+                ollama_endpoint = "Not configured"
+            
+            report_summary = f"""
+            ## {config.enterprise['compliance_mode']} Compliance Report
+            
+            **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            **Environment:** {config.enterprise['environment'].title()}
+            **Data Period:** {config.enterprise['data_retention_days']} days
+            
+            **Summary:**
+            - Overall Compliance Score: 98%
+            - Controls Implemented: 48/49
+            - Critical Controls: 100% compliant
+            - AI Security Controls: 100% compliant
+            - Risk Assessment: Low
+            
+            **Key Findings:**
+            - All access controls properly implemented
+            - Audit logging active and comprehensive
+            - Data encryption enabled for all sensitive data
+            - Session management meets security requirements
+            - Remote AI processing secure and compliant
+            - No external data transfer detected
+            
+            **Remote AI Security Assessment:**
+            - AI endpoint: {ollama_endpoint}
+            - Data privacy: Fully compliant
+            - Network security: Private infrastructure only
+            - Processing transparency: Full audit trail
+            
+            **Recommendations:**
+            - Review SI-1 control implementation
+            - Schedule quarterly compliance review
+            - Update incident response procedures
+            - Continue monitoring AI processing security
+            """
+            
+            st.markdown(report_summary)
+
+if __name__ == "__main__":
+    main()config = st.secrets.get("ollama", {})
             self.ollama = OllamaConfig(
                 base_url=ollama_config.get("base_url", "http://18.188.211.214:11434"),
                 model=ollama_config.get("model", "llama2"),
@@ -630,13 +1032,21 @@ class SecureAnalyticsEngine:
     def __init__(self, config: EnterpriseSecurityConfig):
         self.config = config
         self.analysis_cache = {}
+        
+        # FIXED: Always initialize remote_ai_enabled first
         self.remote_ai_enabled = config.features.get("remote_ai_enabled", True)
+        
         self.ollama_client = None
         self.transformers_model = None
+        self.ai_type = "statistical"  # Default fallback
         
         # Initialize AI capabilities
         if self.remote_ai_enabled:
             self._initialize_remote_ai()
+    
+    def has_remote_ai_enabled(self) -> bool:
+        """Safely check if remote AI is enabled"""
+        return getattr(self, 'remote_ai_enabled', False)
         
     def _initialize_remote_ai(self):
         """Initialize remote AI capabilities"""
@@ -681,7 +1091,7 @@ class SecureAnalyticsEngine:
             
         except Exception as e:
             logger.warning(f"AI initialization failed: {e}")
-            self.remote_ai_enabled = False
+            # FIXED: Don't modify remote_ai_enabled here - keep original setting
             self.ai_type = "statistical"
     
     def analyze_performance_data(self, data: pd.DataFrame) -> Dict[str, str]:
@@ -699,7 +1109,7 @@ class SecureAnalyticsEngine:
             statistical_analysis = self._generate_comprehensive_analysis(data)
             
             # Enhance with AI if available and enabled
-            if self.remote_ai_enabled and hasattr(self, 'ai_type'):
+            if self.has_remote_ai_enabled() and hasattr(self, 'ai_type'):
                 try:
                     ai_enhanced_analysis = self._enhance_with_remote_ai(data, statistical_analysis)
                     # Combine statistical + AI insights
@@ -712,7 +1122,7 @@ class SecureAnalyticsEngine:
             
             self.analysis_cache[data_hash] = final_analysis
             
-            ai_status = "Remote AI-enhanced" if self.remote_ai_enabled else "Statistical"
+            ai_status = "Remote AI-enhanced" if self.has_remote_ai_enabled() else "Statistical"
             logger.info(f"Performance analysis completed using {ai_status} analytics")
             return final_analysis
             
@@ -1989,22 +2399,24 @@ def show_secure_advanced_analytics(data: pd.DataFrame, analytics_engine: SecureA
         ])
     
     with col2:
+        # FIXED: Use the safe method to check remote AI enabled status
         ai_enhancement = st.checkbox("Use Remote AI Enhancement", 
-                                   value=analytics_engine.remote_ai_enabled,
-                                   disabled=not analytics_engine.remote_ai_enabled,
+                                   value=analytics_engine.has_remote_ai_enabled(),
+                                   disabled=not analytics_engine.has_remote_ai_enabled(),
                                    help="Requires remote Ollama configuration")
         
         if st.button("🚀 Run Advanced Analysis", key="advanced_analytics"):
             with st.spinner("🔒 Performing comprehensive analysis with Remote AI..."):
                 # Temporarily disable AI if user unchecked it
-                original_ai_setting = analytics_engine.remote_ai_enabled
-                if not ai_enhancement:
+                original_ai_setting = analytics_engine.has_remote_ai_enabled()
+                if hasattr(analytics_engine, 'remote_ai_enabled') and not ai_enhancement:
                     analytics_engine.remote_ai_enabled = False
                 
                 analysis = analytics_engine.analyze_performance_data(data)
                 
                 # Restore original setting
-                analytics_engine.remote_ai_enabled = original_ai_setting
+                if hasattr(analytics_engine, 'remote_ai_enabled'):
+                    analytics_engine.remote_ai_enabled = original_ai_setting
                 
                 # Map analysis type to result key
                 analysis_map = {
@@ -2720,401 +3132,4 @@ Status: {'✅ Enabled' if ai_enabled else '❌ Disabled'}
         st.markdown(f"• Data Encryption: {'✅ Enabled' if config.security.data_encryption else '❌ Disabled'}")
         st.markdown(f"• Audit Logging: {'✅ Active' if config.security.audit_logging else '❌ Inactive'}")
         try:
-            ollama_config = config.get_ollama_config_safely()
-            ai_url = getattr(ollama_config, 'base_url', 'N/A')
-            st.markdown(f"• AI Security: ✅ Private Network ({ai_url})")
-        except Exception:
-            st.markdown("• AI Security: ✅ Private Network (Not configured)")
-    
-    with col2:
-        st.markdown("**Database Security:**")
-        st.markdown("• Connection Mode: 🔒 Read-Only")
-        st.markdown("• SSL/TLS: ✅ Required")
-        st.markdown("• Connection Pooling: ✅ Secured")
-        st.markdown("• Query Validation: ✅ Active")
-        st.markdown("• AI Data Access: 🔒 Processed securely")
-    
-    # Database configuration
-    st.subheader("🗄️ Database Configuration")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        db_host = config.databases["primary"].host or "Not configured"
-        st.text_input("Primary Database Host", value=db_host if db_host != "Not configured" else "", disabled=True)
-        st.number_input("Connection Pool Size", value=config.databases["primary"].pool_size, disabled=True)
-        st.checkbox("SSL Required", value=config.databases["primary"].ssl_enabled, disabled=True)
-    
-    with col2:
-        st.selectbox("Environment", ["development", "staging", "production"], 
-                    index=["development", "staging", "production"].index(config.enterprise["environment"]),
-                    disabled=True)
-        st.text_input("Compliance Framework", value=config.enterprise["compliance_mode"], disabled=True)
-        st.number_input("Data Retention (days)", value=config.enterprise["data_retention_days"], disabled=True)
-    
-    # Feature configuration
-    st.subheader("🚀 Feature Configuration")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Analytics Features:**")
-        for feature, enabled in config.features.items():
-            if feature not in ["remote_ai_enabled", "ai_model_type"]:  # Skip AI features (shown above)
-                status = "✅" if enabled else "❌"
-                feature_name = feature.replace("_", " ").title()
-                st.markdown(f"• {feature_name}: {status}")
-    
-    with col2:
-        st.markdown("**Security Features:**")
-        st.markdown("• Advanced Analytics: ✅ Statistical + Remote AI")
-        st.markdown("• Data Encryption: ✅ At Rest & In Transit")
-        st.markdown("• Access Logging: ✅ Comprehensive")
-        st.markdown("• Remote AI: ✅ Private Network Only")
-        st.markdown("• External APIs: ❌ None")
-        st.markdown("• Data Privacy: ✅ Your Infrastructure")
-    
-    # Configuration save (demo)
-    if st.button("💾 Save Configuration"):
-        st.success("🔒 Configuration saved successfully")
-        if remote_ai_enabled != config.features.get("remote_ai_enabled", False):
-            st.info("🔄 Remote AI configuration changes require application restart to take effect")
-    
-    st.info("🔒 **Security Note:** Configuration changes require administrator privileges and security approval.")
-    
-    # Remote AI Setup Guide
-    with st.expander("📖 Remote Ollama Setup Guide"):
-        st.markdown(f"""
-        ### 🤖 Setting Up Remote Ollama
-        
-        **Your Current Configuration:**""")
-        
-        try:
-            ollama_config = config.get_ollama_config_safely()
-            endpoint = getattr(ollama_config, 'base_url', 'Not configured')
-            model = getattr(ollama_config, 'model', 'Not configured')
-            timeout = getattr(ollama_config, 'timeout', 30)
-            
-            st.markdown(f"""
-        - **Endpoint:** {endpoint}
-        - **Model:** {model}
-        - **Timeout:** {timeout}s""")
-        except Exception as e:
-            logger.warning(f"Error displaying ollama config in setup guide: {e}")
-            st.markdown("""
-        - **Endpoint:** Not configured
-        - **Model:** Not configured  
-        - **Timeout:** 30s""")
-        
-        st.markdown("""
-        **Setup Instructions:**
-        
-        **1. Install Ollama on your EC2 instance:**
-        ```bash
-        # On your EC2 instance (18.188.211.214)
-        curl -fsSL https://ollama.ai/install.sh | sh
-        
-        # Start Ollama service
-        ollama serve --host 0.0.0.0:11434
-        ```
-        
-        **2. Pull your preferred models:**
-        ```bash
-        # Choose one or more models
-        ollama pull llama2          # 7B model, good performance
-        ollama pull mistral         # Alternative model
-        ollama pull codellama       # Code-focused model
-        ollama pull llama2:13b      # Larger model for better analysis
-        ```
-        
-        **3. Configure Streamlit Secrets:**
-        ```toml
-        [ollama]
-        base_url = "http://18.188.211.214:11434"
-        model = "llama2"
-        timeout = 30
-        max_tokens = 1000
-        temperature = 0.7
-        
-        [ai]
-        remote_ai_enabled = true
-        model_type = "remote_ollama"
-        ```
-        
-        **4. Network Security:**
-        - Ensure port 11434 is open in your security group
-        - Configure firewall to allow connections from your application servers
-        - Consider using VPN or private networking for additional security
-        
-        **Security Benefits:**
-        - All AI processing happens on YOUR EC2 instance
-        - Database data never leaves your infrastructure
-        - Complete control over AI models and processing
-        - Meets enterprise compliance requirements
-        - No dependency on external AI services
-        
-        **Troubleshooting:**
-        - Check if Ollama service is running: `systemctl status ollama`
-        - Verify network connectivity: `curl http://18.188.211.214:11434/api/tags`
-        - Check available models: `ollama list`
-        - Monitor logs: `journalctl -u ollama -f`
-        """)
-
-def show_secure_user_administration(user_manager: SecureEnterpriseUserManager):
-    """Secure user administration interface"""
-    st.header("👥 Secure User Administration")
-    st.markdown("**Enterprise user management with security controls**")
-    
-    # User list with security information
-    st.subheader("🔒 Enterprise Users")
-    
-    users_df = pd.DataFrame([
-        {
-            "Email": email,
-            "Name": user["name"], 
-            "Role": user["role"],
-            "Department": user["department"],
-            "Security Clearance": user.get("security_clearance", "standard").upper(),
-            "MFA": "✅" if user.get("mfa_enabled", False) else "❌",
-            "Last Login": user["last_login"].strftime("%Y-%m-%d %H:%M"),
-            "Permissions": len(user["permissions"])
-        }
-        for email, user in user_manager.users.items()
-    ])
-    
-    st.dataframe(users_df, use_container_width=True)
-    
-    # Active sessions
-    st.subheader("🔐 Active Sessions")
-    
-    if user_manager.active_sessions:
-        sessions_data = []
-        for session_id, session in user_manager.active_sessions.items():
-            sessions_data.append({
-                "Session ID": session_id[:16] + "...",
-                "User": session["user_email"],
-                "Login Time": session["login_time"].strftime("%Y-%m-%d %H:%M"),
-                "Last Activity": session["last_activity"].strftime("%Y-%m-%d %H:%M"),
-                "IP Address": session["ip_address"]
-            })
-        
-        sessions_df = pd.DataFrame(sessions_data)
-        st.dataframe(sessions_df, use_container_width=True)
-    else:
-        st.info("No active sessions")
-    
-    # User management
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("➕ Add New User")
-        new_email = st.text_input("Email Address")
-        new_name = st.text_input("Full Name")
-        new_role = st.selectbox("Role", ["dba_admin", "engineering_manager", "developer", "analyst", "security_officer"])
-        security_clearance = st.selectbox("Security Clearance", ["low", "medium", "high"])
-        mfa_required = st.checkbox("Require MFA")
-        
-        if st.button("🔒 Add Secure User"):
-            st.success(f"User {new_email} added successfully with {security_clearance} clearance")
-    
-    with col2:
-        st.subheader("🔍 Role Permissions")
-        selected_role = st.selectbox("View Role Permissions", ["dba_admin", "engineering_manager", "developer", "analyst", "security_officer"])
-        
-        # Show permissions for selected role
-        sample_user = next((user for user in user_manager.users.values() if user["role"] == selected_role), None)
-        if sample_user:
-            st.write("**Permissions:**")
-            for perm in sample_user["permissions"]:
-                st.write(f"• {perm.replace('_', ' ').title()}")
-            
-            st.write(f"**Security Clearance:** {sample_user.get('security_clearance', 'standard').upper()}")
-            st.write(f"**MFA Required:** {'Yes' if sample_user.get('mfa_enabled', False) else 'No'}")
-
-def show_audit_logs(user_manager: SecureEnterpriseUserManager):
-    """Show audit logs for security compliance"""
-    st.header("📋 Audit Logs")
-    st.markdown("**Security and compliance audit trail with Remote AI activity monitoring**")
-    
-    # Mock audit log data for demo
-    audit_events = [
-        {
-            "Timestamp": datetime.now() - timedelta(minutes=5),
-            "User": "admin@company.com",
-            "Action": "User Login",
-            "Resource": "Application",
-            "Result": "Success",
-            "IP Address": "192.168.1.100"
-        },
-        {
-            "Timestamp": datetime.now() - timedelta(minutes=10),
-            "User": "manager@company.com",
-            "Action": "Remote AI Analysis",
-            "Resource": "Performance Data",
-            "Result": "Success",
-            "IP Address": "192.168.1.102"
-        },
-        {
-            "Timestamp": datetime.now() - timedelta(minutes=15),
-            "User": "analyst@company.com", 
-            "Action": "Data Access",
-            "Resource": "Performance Data",
-            "Result": "Success",
-            "IP Address": "192.168.1.105"
-        },
-        {
-            "Timestamp": datetime.now() - timedelta(hours=1),
-            "User": "unknown@domain.com",
-            "Action": "Failed Login",
-            "Resource": "Application",
-            "Result": "Blocked",
-            "IP Address": "203.0.113.1"
-        },
-        {
-            "Timestamp": datetime.now() - timedelta(hours=2),
-            "User": "admin@company.com",
-            "Action": "Configuration Change",
-            "Resource": "Remote AI Settings",
-            "Result": "Success", 
-            "IP Address": "192.168.1.100"
-        }
-    ]
-    
-    audit_df = pd.DataFrame(audit_events)
-    audit_df["Timestamp"] = audit_df["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
-    
-    st.dataframe(audit_df, use_container_width=True)
-    
-    # Audit log filters
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        log_level = st.selectbox("Filter by Result", ["All", "Success", "Failed", "Blocked"])
-    
-    with col2:
-        time_range = st.selectbox("Time Range", ["Last Hour", "Last 24 Hours", "Last 7 Days"])
-    
-    with col3:
-        if st.button("🔍 Filter Logs"):
-            st.info(f"Filtering logs: {log_level} events in {time_range}")
-    
-    # Export audit logs
-    if st.button("📥 Export Audit Logs"):
-        csv_data = audit_df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Audit Log CSV",
-            data=csv_data,
-            file_name=f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv"
-        )
-
-def show_compliance_reports(config: EnterpriseSecurityConfig, data: pd.DataFrame):
-    """Show compliance reports for regulatory requirements"""
-    st.header("📋 Compliance Reports")
-    st.markdown(f"**{config.enterprise['compliance_mode']} compliance monitoring with Remote AI security validation**")
-    
-    # Compliance overview
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Compliance Score", "98%", "+2%")
-    
-    with col2:
-        st.metric("Controls Passed", "48/49", "+1")
-    
-    with col3:
-        st.metric("Last Audit", "2024-01-15")
-    
-    with col4:
-        st.metric("Risk Level", "Low", "🟢")
-    
-    # Compliance controls
-    st.subheader("🛡️ Control Status")
-    
-    controls = [
-        {"Control ID": "AC-1", "Control Name": "Access Control Policy", "Status": "✅ Compliant", "Last Verified": "2024-01-20"},
-        {"Control ID": "AU-1", "Control Name": "Audit and Accountability", "Status": "✅ Compliant", "Last Verified": "2024-01-20"},
-        {"Control ID": "SC-1", "Control Name": "System Communications Protection", "Status": "✅ Compliant", "Last Verified": "2024-01-18"},
-        {"Control ID": "SI-1", "Control Name": "System and Information Integrity", "Status": "⚠️ Review Required", "Last Verified": "2024-01-10"},
-        {"Control ID": "IA-1", "Control Name": "Identification and Authentication", "Status": "✅ Compliant", "Last Verified": "2024-01-19"},
-        {"Control ID": "AI-1", "Control Name": "AI Data Processing Security", "Status": "✅ Compliant", "Last Verified": "2024-01-22"}
-    ]
-    
-    controls_df = pd.DataFrame(controls)
-    st.dataframe(controls_df, use_container_width=True)
-    
-    # Remote AI compliance section
-    st.subheader("🤖 Remote AI Compliance Status")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**AI Processing Compliance:**")
-        st.markdown("• ✅ Data never leaves private network")
-        st.markdown("• ✅ AI processing on controlled infrastructure")
-        st.markdown("• ✅ No external API dependencies")
-        st.markdown("• ✅ Audit trail for all AI operations")
-        try:
-            if config.has_ollama_config():
-                ollama_config = config.get_ollama_config_safely()
-                ai_endpoint = getattr(ollama_config, 'base_url', 'Not configured')
-                st.markdown(f"• ✅ Secure endpoint: {ai_endpoint}")
-            else:
-                st.markdown("• ✅ Secure endpoint: Configuration pending")
-        except Exception:
-            st.markdown("• ✅ Secure endpoint: Configuration pending")
-    
-    with col2:
-        st.markdown("**Privacy & Security:**")
-        st.markdown("• ✅ GDPR compliant data processing")
-        st.markdown("• ✅ SOC2 Type II controls")
-        st.markdown("• ✅ Data encryption in transit")
-        st.markdown("• ✅ Access controls and authentication")
-        st.markdown("• ✅ Comprehensive logging and monitoring")
-    
-    # Generate compliance report
-    if st.button("📊 Generate Compliance Report"):
-        with st.spinner("Generating compliance report..."):
-            time.sleep(2)
-            
-            st.success("✅ Compliance report generated successfully")
-            
-            report_summary = f"""
-            ## {config.enterprise['compliance_mode']} Compliance Report
-            
-            **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            **Environment:** {config.enterprise['environment'].title()}
-            **Data Period:** {config.enterprise['data_retention_days']} days
-            
-            **Summary:**
-            - Overall Compliance Score: 98%
-            - Controls Implemented: 48/49
-            - Critical Controls: 100% compliant
-            - AI Security Controls: 100% compliant
-            - Risk Assessment: Low
-            
-            **Key Findings:**
-            - All access controls properly implemented
-            - Audit logging active and comprehensive
-            - Data encryption enabled for all sensitive data
-            - Session management meets security requirements
-            - Remote AI processing secure and compliant
-            - No external data transfer detected
-            
-            **Remote AI Security Assessment:**
-            - AI endpoint: {config.ollama.base_url}
-            - Data privacy: Fully compliant
-            - Network security: Private infrastructure only
-            - Processing transparency: Full audit trail
-            
-            **Recommendations:**
-            - Review SI-1 control implementation
-            - Schedule quarterly compliance review
-            - Update incident response procedures
-            - Continue monitoring AI processing security
-            """
-            
-            st.markdown(report_summary)
-
-if __name__ == "__main__":
-    main()
+            ollama_
