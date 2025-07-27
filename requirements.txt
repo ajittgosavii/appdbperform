@@ -1,4 +1,35 @@
+# Core dependencies for Streamlit DB Performance Monitor
 streamlit>=1.28.0
-pandas>=1.5.0
+pandas>=2.0.0
 plotly>=5.15.0
 numpy>=1.24.0
+
+# Database connectivity
+psycopg2-binary>=2.9.7
+
+# Optional AI/ML dependencies (uncomment if needed)
+# ollama>=0.1.7
+# transformers>=4.30.0
+# torch>=2.0.0
+
+# Additional useful packages for data analysis
+sqlparse>=0.4.4
+python-dateutil>=2.8.2
+
+# Security and logging (already in standard library but good to specify versions)
+# These are built-in Python modules, no need to install:
+# - hashlib
+# - secrets
+# - logging
+# - sqlite3
+# - json
+# - threading
+# - contextlib
+# - abc
+# - dataclasses
+# - uuid
+# - asyncio
+# - typing
+# - re
+# - datetime
+# - time

@@ -10,7 +10,6 @@ import time
 import hashlib
 import logging
 import sqlite3
-import psycopg2
 from typing import Dict, List, Tuple, Optional, Any
 import re
 from dataclasses import dataclass
@@ -20,6 +19,29 @@ import asyncio
 from contextlib import contextmanager
 import threading
 import secrets
+
+# Optional database imports with fallbacks
+try:
+    import psycopg2
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    psycopg2 = None
+
+# Optional AI imports with fallbacks
+try:
+    import ollama
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+    ollama = None
+
+try:
+    from transformers import pipeline
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    pipeline = None
 
 # Configure enterprise logging
 logging.basicConfig(
@@ -156,10 +178,18 @@ class SecurePostgreSQLInterface:
         self.connection_pool = []
         self.pool_lock = threading.Lock()
         self.connected = False
+        self.psycopg2_available = PSYCOPG2_AVAILABLE
+        
+        if not self.psycopg2_available:
+            logger.warning("PostgreSQL driver (psycopg2) not available - using demo mode")
         
     def connect(self) -> bool:
         """Establish secure database connection"""
         try:
+            if not self.psycopg2_available:
+                logger.info("PostgreSQL driver not available - using secure demo data")
+                return False
+                
             if not self.config.host or not self.config.password:
                 logger.warning("Database configuration incomplete - using demo data")
                 return False
@@ -198,6 +228,9 @@ class SecurePostgreSQLInterface:
     @contextmanager
     def get_connection(self):
         """Get database connection from secure pool"""
+        if not self.psycopg2_available:
+            raise Exception("PostgreSQL driver not available")
+            
         conn = None
         try:
             conn = psycopg2.connect(
@@ -225,7 +258,7 @@ class SecurePostgreSQLInterface:
             if not self._is_safe_query(query):
                 raise ValueError("Only SELECT queries are allowed for security")
             
-            if self.connected:
+            if self.connected and self.psycopg2_available:
                 with self.get_connection() as conn:
                     return pd.read_sql_query(query, conn, params=params)
             else:
@@ -238,6 +271,10 @@ class SecurePostgreSQLInterface:
     
     def get_performance_metrics(self, hours: int = 24) -> pd.DataFrame:
         """Get PostgreSQL performance metrics securely"""
+        if not self.psycopg2_available or not self.connected:
+            logger.info("Using demo performance metrics")
+            return self._generate_demo_data()
+            
         query = """
         SELECT 
             query,
@@ -261,6 +298,10 @@ class SecurePostgreSQLInterface:
     
     def get_slow_queries(self, threshold_ms: int = 5000, limit: int = 100) -> pd.DataFrame:
         """Get slow queries securely"""
+        if not self.psycopg2_available or not self.connected:
+            logger.info("Using demo slow queries data")
+            return self._generate_slow_queries_demo(limit)
+            
         query = """
         SELECT 
             queryid,
@@ -280,6 +321,15 @@ class SecurePostgreSQLInterface:
     
     def get_database_stats(self) -> Dict[str, Any]:
         """Get database health statistics"""
+        if not self.psycopg2_available or not self.connected:
+            # Demo health data
+            return {
+                "connections": np.random.randint(20, 80),
+                "database_size": "245.2 GB",
+                "cache_hit_ratio": np.random.uniform(85, 95),
+                "longest_query": np.random.uniform(0, 30)
+            }
+            
         queries = {
             "connections": "SELECT count(*) as active_connections FROM pg_stat_activity WHERE state = 'active'",
             "database_size": "SELECT pg_size_pretty(pg_database_size(current_database())) as size",
