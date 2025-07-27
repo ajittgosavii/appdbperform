@@ -1,3 +1,4 @@
+from __future__ import annotations
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -23,7 +24,7 @@ import requests
 import pymssql
 import sqlalchemy
 from sqlalchemy import create_engine, text
-from __future__ import annotations
+
 
 logger = logging.getLogger(__name__)
 
